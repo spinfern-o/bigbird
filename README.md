@@ -40,6 +40,17 @@ can be built at the same time. See **[ROADMAP.txt](ROADMAP.txt)**.
 - Undo/redo for everything (40 steps)
 - Save projects (`.pforge`, keeps layers + edits) and export JPG/PNG/WebP/TIFF
 
+**AI tools (run locally, free and private)** in the **AI** tab and menu
+- **Remove Background** (BiRefNet-lite): cuts out the subject onto a new layer
+- **Refine Outline**: the cut-out edge becomes draggable dots joined by lines. Click a
+  line to add a dot, right-click to delete, **More Points** for finer control. Edges you
+  don't touch keep the AI's fine detail (e.g. hair).
+- **Remove Object** (LaMa, or MI-GAN for slower PCs): click dots around anything, press
+  Enter, and the gap is filled with matching background on a new layer
+- Models download once on first use to `%LOCALAPPDATA%\PhotoForge\models`, use the GPU via
+  DirectML when available, and fall back to the CPU. All are commercially licensed
+  (Help → Open-source Licenses).
+
 **Beginner help**: welcome screen, plain-English tooltips on every control,
 status-bar hints for each tool, Quick Start guide (F1), double-click a slider's name to reset.
 
@@ -53,4 +64,5 @@ status-bar hints for each tool, Quick Start guide (F1), double-click a slider's 
 | `app/canvas.py` | zoom/pan view and interactive tools |
 | `app/panels.py` | Adjust panel (histogram, presets, sliders) and Layers panel |
 | `app/main_window.py` | menus, toolbars, file handling |
+| `app/ai/` | AI model registry/downloader, background & object removal, outline editor, AI tab |
 | `app/filters.py`, `app/imageio.py`, `app/dialogs.py`, `app/theme.py`, `app/icons.py` | supporting pieces |

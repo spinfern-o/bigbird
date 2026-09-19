@@ -31,7 +31,7 @@ A1. Selection system  [do this first - A3-A6 depend on it]
     - Brush, eraser and filters only affect the selected area when a selection exists.
     - Delete key clears the selected pixels; Ctrl+J copies the selection to a new layer.
 
-A2. AI framework
+A2. AI framework  [PARTLY DONE: local backend, model downloader, background runner]
     - app/ai/base.py: one interface, `run(task, image, mask, prompt) -> image`,
       with two backends:
         * LocalBackend  - ONNX Runtime + DirectML (uses any GPU, falls back to CPU)
@@ -45,14 +45,16 @@ A2. AI framework
       must never freeze.
     - Show a clear notice when a feature sends the photo to the cloud.
 
-A3. Remove Background (local: BiRefNet-lite; see "Approved AI models" below)
+A3. Remove Background (local: BiRefNet-lite; see "Approved AI models" below)  [DONE]
+    - Plus "Refine Outline": editable dots and lines, More/Fewer Points; untouched
+      edges keep the AI's fine detail.
     - One click: the result goes on a new layer (original stays underneath, hidden).
 
 A4. Click-to-Select (local: SAM 2.1 Tiny)
     - Click an object to select it; Shift+click adds, Alt+click subtracts.
     - Produces a normal selection (A1), so every selection feature works with it.
 
-A5. Remove Object (local: MI-GAN for small areas, LaMa for large areas)
+A5. Remove Object (local: MI-GAN for small areas, LaMa for large areas)  [DONE]
     - Brush over or select something, click "Remove"; the result goes on a new layer.
 
 A6. Describe Your Edit / Generative Fill (cloud: NVIDIA - Qwen-Image-Edit, FLUX.2-klein 4B)
@@ -62,7 +64,7 @@ A6. Describe Your Edit / Generative Fill (cloud: NVIDIA - Qwen-Image-Edit, FLUX.
 
 A7. AI Upscale 2x / 4x (Real-ESRGAN: realesr-general-x4v3 fast, x4plus best quality)
 
-A8. Open-source licenses screen
+A8. Open-source licenses screen  [DONE: Help > Open-source Licenses]
     - Help > About > Open-source licenses: list every model and library with its
       license text and copyright notice. MIT / Apache / BSD require this when the
       app is distributed.

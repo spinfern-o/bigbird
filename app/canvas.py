@@ -60,6 +60,8 @@ class Canvas(QGraphicsView):
     moveFinished = Signal(int, int)
     filesDropped = Signal(list)
     hint = Signal(str)
+    outlineApply = Signal()
+    outlineCancel = Signal()
 
     def __init__(self, state, parent=None):
         super().__init__(parent)
@@ -115,6 +117,7 @@ class Canvas(QGraphicsView):
         self._stroke = None
         self._crop_drag = None
         self._move_origin = None
+        self.outline = None  # OutlineEditor while an AI outline tool is active
         self.update_cursor()
 
     # ------------------------------------------------------------------ display
@@ -193,7 +196,9 @@ class Canvas(QGraphicsView):
         if self._space or t == "hand":
             c = Qt.OpenHandCursor
         else:
-            c = {"move": Qt.SizeAllCursor, "text": Qt.IBeamCursor}.get(t, Qt.CrossCursor)
+            c = {"move": Qt.SizeAllCursor, "text": Qt.IBeamCursor,
+                 "ai_remove": Qt.PointingHandCursor,
+                 "ai_refine": Qt.PointingHandCursor}.get(t, Qt.CrossCursor)
         self.viewport().setCursor(c)
 
     def _in_doc(self, p):
@@ -223,6 +228,9 @@ class Canvas(QGraphicsView):
             self._pan_last = e.position()
             self.viewport().setCursor(Qt.ClosedHandCursor)
             return
+        if self.outline is not None and e.button() in (Qt.LeftButton, Qt.RightButton):
+            self.outline.press(p, e.button())
+            return
         if e.button() != Qt.LeftButton:
             return
         if tool in ("brush", "eraser"):
@@ -245,6 +253,8 @@ class Canvas(QGraphicsView):
             self._pan_last = e.position()
             self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() - int(d.x()))
             self.verticalScrollBar().setValue(self.verticalScrollBar().value() - int(d.y()))
+        elif self.outline is not None:
+            self.outline.move(p)
         elif self._stroke:
             self._continue_stroke(p)
         elif self._crop_drag:
@@ -259,6 +269,8 @@ class Canvas(QGraphicsView):
         if self._pan_last is not None:
             self._pan_last = None
             self.update_cursor()
+        elif self.outline is not None:
+            self.outline.release()
         elif self._stroke:
             self._end_stroke()
         elif self._crop_drag:
@@ -268,7 +280,22 @@ class Canvas(QGraphicsView):
             self._move_origin = None
             self.moveFinished.emit(round(d.x()), round(d.y()))
 
+    def mouseDoubleClickEvent(self, e):
+        if self.outline is not None and e.button() == Qt.LeftButton:
+            self.outline.double_click()
+        else:
+            super().mouseDoubleClickEvent(e)
+
     def keyPressEvent(self, e):
+        if self.outline is not None:
+            if self.outline.key(e.key()):
+                return
+            if e.key() in (Qt.Key_Return, Qt.Key_Enter):
+                self.outlineApply.emit()
+                return
+            if e.key() == Qt.Key_Escape:
+                self.outlineCancel.emit()
+                return
         if e.key() == Qt.Key_Space and not e.isAutoRepeat():
             self._space = True
             self.update_cursor()
