@@ -235,7 +235,7 @@ class Canvas(QGraphicsView):
             self.viewport().setCursor(Qt.ClosedHandCursor)
             return
         if self.outline is not None and e.button() in (Qt.LeftButton, Qt.RightButton):
-            self.outline.press(p, e.button())
+            self.outline.press(p, e.button(), e.modifiers())
             return
         if e.button() != Qt.LeftButton:
             return

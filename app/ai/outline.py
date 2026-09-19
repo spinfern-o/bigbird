@@ -49,7 +49,7 @@ class OutlineItem(QGraphicsItem):
             if len(poly) >= 3:
                 path.addPolygon(QPolygonF([QPointF(x, y) for x, y in poly]))
                 path.closeSubpath()
-        if e.dim_outside:
+        if e.shade == "outside":
             # Show what will be removed: darken everything outside the shapes.
             shade = QPainterPath()
             shade.setFillRule(Qt.OddEvenFill)
@@ -59,6 +59,10 @@ class OutlineItem(QGraphicsItem):
             # Every kept shape gets the same faint blue tint, so they all read as "kept"
             # regardless of how bright or dark the photo is underneath.
             painter.fillPath(path, QColor(60, 170, 255, 45))
+        elif e.shade == "inside":
+            # Refining a removal: the shapes are what gets removed.
+            painter.fillPath(path, QColor(0, 0, 0, 120))
+            painter.fillPath(path, QColor(255, 60, 60, 60))
         else:
             fill = QColor(e.color)
             fill.setAlpha(70)
@@ -86,10 +90,12 @@ class OutlineItem(QGraphicsItem):
 
 
 class OutlineEditor:
-    def __init__(self, canvas, color, dim_outside=False):
+    def __init__(self, canvas, color, shade=None):
+        """shade: "outside" darkens what's outside the shapes (refining a cut-out),
+        "inside" darkens what's inside them (refining a removal), None just tints."""
         self.canvas = canvas
         self.color = QColor(color)
-        self.dim_outside = dim_outside
+        self.shade = shade
         self.doc_w, self.doc_h = canvas.doc_w, canvas.doc_h
         self.polys = []      # closed shapes: lists of [x, y]
         self.open = []       # shape currently being drawn
@@ -235,7 +241,7 @@ class OutlineEditor:
         return [float(np.clip(p[0], 0, self.doc_w)), float(np.clip(p[1], 0, self.doc_h))]
 
     # ------------------------------------------------------------------ mouse
-    def press(self, pos, button):
+    def press(self, pos, button, modifiers=None):
         p = self._clamp((pos.x(), pos.y()))
         hit = self._vertex_at(p)
         if button == Qt.RightButton:

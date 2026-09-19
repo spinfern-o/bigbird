@@ -8,34 +8,35 @@ import threading
 import urllib.request
 from dataclasses import dataclass
 
+_SAM = "https://huggingface.co/onnx-community/sam2.1-hiera-tiny-ONNX/resolve/main/onnx/"
+
 
 @dataclass(frozen=True)
 class ModelInfo:
     key: str
     name: str
     purpose: str
-    url: str
-    filename: str
+    files: tuple      # ((url, path relative to the models folder), ...)
     size_mb: int
     license: str
     homepage: str
-    gpu: bool  # False = known not to work with DirectML, always use CPU
+    gpu: bool         # False = known not to work with DirectML, always use CPU
 
 
 MODELS = {
     "birefnet_lite": ModelInfo(
         "birefnet_lite", "BiRefNet-lite", "Remove Background",
-        "https://huggingface.co/onnx-community/BiRefNet_lite-ONNX/resolve/main/onnx/model.onnx",
-        "birefnet_lite.onnx", 224, "MIT", "https://github.com/ZhengPeng7/BiRefNet", gpu=True),
-    "lama": ModelInfo(
-        "lama", "LaMa (big-lama)", "Remove Object: best quality",
-        "https://huggingface.co/Carve/LaMa-ONNX/resolve/main/lama_fp32.onnx",
-        "lama_fp32.onnx", 208, "Apache 2.0", "https://github.com/advimman/lama", gpu=False),
-    "migan": ModelInfo(
-        "migan", "MI-GAN", "Remove Object: fast",
-        "https://huggingface.co/andraniksargsyan/migan/resolve/main/migan_pipeline_v2.onnx",
-        "migan_pipeline_v2.onnx", 28, "MIT", "https://github.com/Picsart-AI-Research/MI-GAN",
-        gpu=True),
+        (("https://huggingface.co/onnx-community/BiRefNet_lite-ONNX/resolve/main/onnx/model.onnx",
+          "birefnet_lite.onnx"),),
+        224, "MIT", "https://github.com/ZhengPeng7/BiRefNet", gpu=True),
+    "sam2": ModelInfo(
+        "sam2", "SAM 2.1 Tiny", "Select objects (click to select)",
+        ((_SAM + "vision_encoder.onnx", "sam2.1_tiny/vision_encoder.onnx"),
+         (_SAM + "vision_encoder.onnx_data", "sam2.1_tiny/vision_encoder.onnx_data"),
+         (_SAM + "prompt_encoder_mask_decoder.onnx", "sam2.1_tiny/prompt_encoder_mask_decoder.onnx"),
+         (_SAM + "prompt_encoder_mask_decoder.onnx_data",
+          "sam2.1_tiny/prompt_encoder_mask_decoder.onnx_data")),
+        155, "Apache 2.0", "https://github.com/facebookresearch/sam2", gpu=True),
 }
 
 
@@ -50,39 +51,42 @@ def models_dir():
     return d
 
 
-def model_path(key):
-    return os.path.join(models_dir(), MODELS[key].filename)
+def _path(rel):
+    return os.path.join(models_dir(), *rel.split("/"))
 
 
 def is_downloaded(key):
-    return os.path.isfile(model_path(key))
+    return all(os.path.isfile(_path(rel)) for _, rel in MODELS[key].files)
 
 
 def download(key, progress=None, cancel_event=None):
-    """Download a model. progress(done_bytes, total_bytes) is called as data arrives."""
+    """Download a model's files. progress(done_bytes, total_bytes) is called as data arrives."""
     info = MODELS[key]
-    dest = model_path(key)
-    tmp = dest + ".part"
-    req = urllib.request.Request(info.url, headers={"User-Agent": "PhotoForge"})
-    try:
-        with urllib.request.urlopen(req, timeout=30) as r, open(tmp, "wb") as f:
-            total = int(r.headers.get("Content-Length") or info.size_mb * 1_000_000)
-            done = 0
-            while True:
-                if cancel_event is not None and cancel_event.is_set():
-                    raise Cancelled()
-                chunk = r.read(1 << 20)
-                if not chunk:
-                    break
-                f.write(chunk)
-                done += len(chunk)
-                if progress:
-                    progress(done, total)
-        os.replace(tmp, dest)
-    finally:
-        if os.path.exists(tmp):
-            os.remove(tmp)
-    return dest
+    total = info.size_mb * 1_000_000
+    done = 0
+    for url, rel in info.files:
+        dest = _path(rel)
+        if os.path.isfile(dest):
+            continue
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        tmp = dest + ".part"
+        req = urllib.request.Request(url, headers={"User-Agent": "PhotoForge"})
+        try:
+            with urllib.request.urlopen(req, timeout=30) as r, open(tmp, "wb") as f:
+                while True:
+                    if cancel_event is not None and cancel_event.is_set():
+                        raise Cancelled()
+                    chunk = r.read(1 << 20)
+                    if not chunk:
+                        break
+                    f.write(chunk)
+                    done += len(chunk)
+                    if progress:
+                        progress(done, max(total, done))
+            os.replace(tmp, dest)
+        finally:
+            if os.path.exists(tmp):
+                os.remove(tmp)
 
 
 # --------------------------------------------------------------------------- sessions
@@ -103,7 +107,7 @@ def device_name():
     return "graphics card (DirectML)" if gpu_available() else "processor (CPU)"
 
 
-def _make_session(key, use_gpu):
+def _make_session(rel, use_gpu):
     import onnxruntime as ort
     opts = ort.SessionOptions()
     providers = ["CPUExecutionProvider"]
@@ -111,22 +115,25 @@ def _make_session(key, use_gpu):
         providers.insert(0, "DmlExecutionProvider")
         opts.enable_mem_pattern = False  # required by DirectML
         opts.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
-    return ort.InferenceSession(model_path(key), sess_options=opts, providers=providers)
+    return ort.InferenceSession(_path(rel), sess_options=opts, providers=providers)
 
 
-def run(key, feeds):
-    """Run a model, preferring the GPU; falls back to the CPU if the GPU path fails."""
+def run(key, feeds, part=None, gpu=True):
+    """Run a model (or one `part` file of it), preferring the GPU unless gpu=False.
+    Falls back to the CPU if the GPU path fails."""
+    info = MODELS[key]
+    rel = next(r for _, r in info.files if r.endswith(".onnx") and (part is None or part in r))
     with _lock:
-        entry = _sessions.get(key)
+        entry = _sessions.get(rel)
         if entry is None:
-            use_gpu = MODELS[key].gpu and gpu_available()
+            use_gpu = gpu and info.gpu and gpu_available()
             try:
-                entry = (_make_session(key, use_gpu), use_gpu)
+                entry = (_make_session(rel, use_gpu), use_gpu)
             except Exception:
                 if not use_gpu:
                     raise
-                entry = (_make_session(key, False), False)
-            _sessions[key] = entry
+                entry = (_make_session(rel, False), False)
+            _sessions[rel] = entry
     session, on_gpu = entry
     try:
         return session.run(None, feeds)
@@ -134,6 +141,6 @@ def run(key, feeds):
         if not on_gpu:
             raise
         with _lock:
-            cpu = _make_session(key, False)
-            _sessions[key] = (cpu, False)
+            cpu = _make_session(rel, False)
+            _sessions[rel] = (cpu, False)
         return cpu.run(None, feeds)

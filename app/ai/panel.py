@@ -25,6 +25,7 @@ class AIPanel(QScrollArea):
     removeBackground = Signal()
     refineOutline = Signal()
     removeObject = Signal()
+    refineRemoval = Signal()
 
     def __init__(self):
         super().__init__()
@@ -72,19 +73,33 @@ class AIPanel(QScrollArea):
         c.lay.addWidget(self.refine_btn)
         lay.addWidget(c)
 
-        c = _Card("Remove Object",
-                  "Click dots around something you want gone (a person, a sign, a power line), "
-                  "then click Remove Object. The AI fills the gap with matching background.")
-        self.obj_btn = QPushButton("Outline an Object to Remove")
+        c = _Card("Remove Objects",
+                  "Click the objects you want gone (a person, a sign, a bin) and the AI finds "
+                  "their outlines. They're cut out so the layer below shows through, and you can "
+                  "fine-tune the outline afterwards.")
+        self.obj_btn = QPushButton("Select Object(s) to Remove")
         self.obj_btn.setObjectName("accent")
         self.obj_btn.clicked.connect(self.removeObject)
-        self.quality = QComboBox()
-        self.quality.addItem("Best quality (LaMa)", "best")
-        self.quality.addItem("Fast: for slower computers (MI-GAN)", "fast")
-        self.quality.setToolTip("Best quality looks more natural. Fast is quicker and uses a "
-                                "smaller download.")
+        soon = QLabel("Coming soon: fill the gap with matching background (cloud AI).")
+        soon.setWordWrap(True)
+        soon.setObjectName("hintLabel")
+        row = QHBoxLayout()
+        row.addWidget(QLabel("Outline points for refining"))
+        self.removal_points = QSpinBox()
+        self.removal_points.setRange(8, 5000)
+        self.removal_points.setSingleStep(25)
+        self.removal_points.setValue(150)
+        self.removal_points.setToolTip("How many dots Refine Removal starts with. You can also "
+                                       "change it while refining.")
+        row.addWidget(self.removal_points)
+        self.refine_removal_btn = QPushButton("Refine Removal…")
+        self.refine_removal_btn.setToolTip("Adjust exactly what was removed: drag the dots, click "
+                                           "a line to add a dot, or change the number of points.")
+        self.refine_removal_btn.clicked.connect(self.refineRemoval)
         c.lay.addWidget(self.obj_btn)
-        c.lay.addWidget(self.quality)
+        c.lay.addLayout(row)
+        c.lay.addWidget(self.refine_removal_btn)
+        c.lay.addWidget(soon)
         lay.addWidget(c)
 
         self.status = QLabel()

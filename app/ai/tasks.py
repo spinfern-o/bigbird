@@ -8,12 +8,18 @@ _MEAN = np.array([0.485, 0.456, 0.406], np.float32)
 _STD = np.array([0.229, 0.224, 0.225], np.float32)
 
 
+def _normalize(rgb, size):
+    x = cv2.resize(rgb, (size, size), interpolation=cv2.INTER_AREA).astype(np.float32)
+    x = ((x / 255.0 - _MEAN) / _STD).transpose(2, 0, 1)[None]
+    return np.ascontiguousarray(x, np.float32)
+
+
+# --------------------------------------------------------------------------- background
+
 def remove_background(rgba):
     """Return an HxW uint8 mask: 255 = subject (keep), 0 = background."""
     h, w = rgba.shape[:2]
-    x = cv2.resize(rgba[..., :3], (1024, 1024), interpolation=cv2.INTER_AREA).astype(np.float32)
-    x = ((x / 255.0 - _MEAN) / _STD).transpose(2, 0, 1)[None]
-    logits = models.run("birefnet_lite", {"input_image": np.ascontiguousarray(x, np.float32)})[0]
+    logits = models.run("birefnet_lite", {"input_image": _normalize(rgba[..., :3], 1024)})[0]
     prob = 1.0 / (1.0 + np.exp(-logits[0, 0]))
     prob = cv2.resize(prob, (w, h), interpolation=cv2.INTER_LINEAR)
     return np.clip(prob * 255 + 0.5, 0, 255).astype(np.uint8)
@@ -27,60 +33,33 @@ def crisp_edges(mask):
     return (t * t * (3 - 2 * t) * 255 + 0.5).astype(np.uint8)
 
 
-def grow_mask(mask, pixels):
-    """Expand a mask outward; inpainting works much better with a little margin."""
-    k = max(1, int(round(pixels))) * 2 + 1
-    return cv2.dilate(mask, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k)))
+# --------------------------------------------------------------------------- object selection (SAM 2.1)
+
+class SamImage:
+    """The photo analysed once by SAM's image encoder; clicks are then decoded instantly."""
+
+    def __init__(self, rgba):
+        self.h, self.w = rgba.shape[:2]
+        # SAM 2.1 takes the whole photo squeezed to 1024x1024.
+        x = cv2.resize(rgba[..., :3], (1024, 1024), interpolation=cv2.INTER_LINEAR)
+        x = ((x.astype(np.float32) / 255.0 - _MEAN) / _STD).transpose(2, 0, 1)[None]
+        e0, e1, e2 = models.run("sam2", {"pixel_values": np.ascontiguousarray(x, np.float32)},
+                                part="vision_encoder")
+        self.emb = {"image_embeddings.0": e0, "image_embeddings.1": e1, "image_embeddings.2": e2}
+
+    def decode(self, points, labels):
+        """points: [(x, y)] in photo pixels; labels: 1 = include, 0 = exclude.
+        Returns (scores[3], low-res logits[3, 256, 256]) for three candidate masks."""
+        p = np.array(points, np.float32) * [1024.0 / self.w, 1024.0 / self.h]
+        feeds = {"input_points": p[None, None].astype(np.float32),
+                 "input_labels": np.array(labels, np.int64)[None, None],
+                 "input_boxes": np.zeros((1, 0, 4), np.float32), **self.emb}
+        # The small decoder is faster on the CPU than the round trip to the GPU.
+        iou, masks, _ = models.run("sam2", feeds, part="mask_decoder", gpu=False)
+        return iou[0, 0], masks[0, 0]
 
 
-def _inpaint_lama(rgb, hole):
-    """LaMa works at a fixed 512x512, so inpaint a square crop around the hole."""
-    H, W = hole.shape
-    ys, xs = np.nonzero(hole)
-    y0, y1, x0, x1 = ys.min(), ys.max() + 1, xs.min(), xs.max() + 1
-    # Square crop with generous context around the hole (at least 512 px when possible).
-    side = int(max(y1 - y0, x1 - x0) * 1.8) + 32
-    side = min(max(side, 512), max(H, W))
-    cy, cx = (y0 + y1) // 2, (x0 + x1) // 2
-    top = int(np.clip(cy - side // 2, 0, max(0, H - side)))
-    left = int(np.clip(cx - side // 2, 0, max(0, W - side)))
-    bottom, right = min(H, top + side), min(W, left + side)
-    crop = rgb[top:bottom, left:right]
-    cmask = hole[top:bottom, left:right]
-    ch, cw = crop.shape[:2]
-
-    img = cv2.resize(crop, (512, 512), interpolation=cv2.INTER_AREA if ch > 512 else cv2.INTER_CUBIC)
-    m = (cv2.resize(cmask, (512, 512), interpolation=cv2.INTER_NEAREST) > 127).astype(np.float32)
-    img = img.astype(np.float32).transpose(2, 0, 1)[None] / 255.0
-    m = m[None, None]
-    out = models.run("lama", {"image": np.ascontiguousarray(img * (1 - m), np.float32),
-                              "mask": np.ascontiguousarray(m)})[0]
-    out = np.clip(out[0].transpose(1, 2, 0), 0, 255).astype(np.uint8)
-    out = cv2.resize(out, (cw, ch), interpolation=cv2.INTER_CUBIC)
-    result = rgb.copy()
-    result[top:bottom, left:right] = out
-    return result
-
-
-def _inpaint_migan(rgb, hole):
-    known = np.where(hole > 127, 0, 255).astype(np.uint8)
-    out = models.run("migan", {"image": np.ascontiguousarray(rgb.transpose(2, 0, 1)[None]),
-                               "mask": np.ascontiguousarray(known[None, None])})[0]
-    return out[0].transpose(1, 2, 0)
-
-
-def remove_object(rgba, mask, quality="best"):
-    """Fill the area where mask > 0. Returns an RGBA layer containing only the patch."""
-    h, w = mask.shape
-    grow = max(4.0, 0.004 * np.hypot(h, w))
-    hole = grow_mask((mask > 127).astype(np.uint8) * 255, grow)
-    if not hole.any():
-        raise ValueError("Nothing is outlined.")
-    rgb = np.ascontiguousarray(rgba[..., :3])
-    filled = _inpaint_migan(rgb, hole) if quality == "fast" else _inpaint_lama(rgb, hole)
-    # Soft-edged alpha so the patch blends into the photo.
-    alpha = cv2.GaussianBlur(grow_mask(hole, grow * 0.5), (0, 0), max(1.0, grow * 0.5))
-    out = np.zeros((h, w, 4), np.uint8)
-    out[..., :3] = filled
-    out[..., 3] = alpha
-    return out
+def logits_to_mask(logits, w, h):
+    """Upscale SAM's 256x256 logits to w x h and return a soft-edged uint8 mask."""
+    up = cv2.resize(logits.astype(np.float32), (w, h), interpolation=cv2.INTER_LINEAR)
+    return (255.0 / (1.0 + np.exp(-np.clip(up * 2.0, -30, 30))) + 0.5).astype(np.uint8)

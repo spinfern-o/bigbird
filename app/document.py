@@ -39,10 +39,11 @@ class Layer:
         self.blend = blend
         self.thumb = None
         self.thumb_src = None
+        self.source = None  # pixels this layer was cut from (e.g. by object removal)
 
     def copy(self):
         c = Layer(self.name, self.pixels, self.visible, self.opacity, self.blend)
-        c.thumb, c.thumb_src = self.thumb, self.thumb_src
+        c.thumb, c.thumb_src, c.source = self.thumb, self.thumb_src, self.source
         return c
 
 
@@ -244,6 +245,16 @@ class Document(QObject):
                 l.visible = False
         self.layers.append(Layer(name, pixels))
         self.active = len(self.layers) - 1
+        self.changed.emit("structure")
+
+    def add_derived_layer(self, pixels, name, label, source):
+        """Put an edited copy of layer `source` right above it and hide the original."""
+        self.push_undo(label)
+        self.layers[source].visible = False
+        layer = Layer(name, pixels)
+        layer.source = self.layers[source].pixels
+        self.layers.insert(source + 1, layer)
+        self.active = source + 1
         self.changed.emit("structure")
 
     def set_layer_pixels(self, pixels, label, index=None):

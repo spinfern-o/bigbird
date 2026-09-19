@@ -50,14 +50,20 @@ A3. Remove Background (local: BiRefNet-lite; see "Approved AI models" below)  [D
       edges keep the AI's fine detail.
     - One click: the result goes on a new layer (original stays underneath, hidden).
 
-A4. Click-to-Select (local: SAM 2.1 Tiny)
+A4. Click-to-Select (local: SAM 2.1 Tiny)  [DONE, used by "Select Object(s) to Remove"]
     - Click an object to select it; Shift+click adds, Alt+click subtracts.
     - Produces a normal selection (A1), so every selection feature works with it.
 
-A5. Remove Object (local: MI-GAN for small areas, LaMa for large areas)  [DONE]
+A5. Remove Object  [DONE, redesigned]
+    - Click objects to select them (SAM 2.1). They are made transparent (not filled) on a
+      new layer, then "Refine Removal" opens with editable dots.
+    - Filling the gap moves to the cloud (A6). The local LaMa / MI-GAN fill was removed.
     - Brush over or select something, click "Remove"; the result goes on a new layer.
 
 A6. Describe Your Edit / Generative Fill (cloud: NVIDIA - Qwen-Image-Edit, FLUX.2-klein 4B)
+    - Includes "Fill removed area": fill the transparent gap left by A5.
+    - Note: NVIDIA's Nemotron models are text / vision-language models; they can describe
+      an image but cannot generate pixels, so they are not used for filling.
     - Text box: "make it sunset", "remove the people", "add snow".
     - With a selection: only the selected area is regenerated.
     - Result on a new layer; offer 2-3 variations to pick from.
@@ -77,8 +83,8 @@ APPROVED AI MODELS (all free to download and allowed in commercial products)
     Feature             Model                         License       Where to get it
     ------------------  ----------------------------  ------------  ------------------------------------------
     Remove background   BiRefNet-lite (44M params)    MIT           huggingface.co/onnx-community/BiRefNet_lite-ONNX
-    Click-to-select     SAM 2.1 Tiny (39M params)     Apache 2.0    huggingface.co/facebook/sam2.1-hiera-tiny
-                                                                    (needs one-time ONNX export)
+    Click-to-select     SAM 2.1 Tiny (39M params)     Apache 2.0    huggingface.co/onnx-community/sam2.1-hiera-tiny-ONNX
+                                                                    (converted from facebook/sam2.1-hiera-tiny)
     Remove small areas  MI-GAN                        MIT (code +   github.com/Picsart-AI-Research/MI-GAN
                                                       weights)      (official ONNX provided)
     Remove large areas  LaMa (big-lama)               Apache 2.0    github.com/advimman/lama
