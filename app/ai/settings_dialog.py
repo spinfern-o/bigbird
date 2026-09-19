@@ -1,42 +1,37 @@
 """AI Settings: run heavy AI on this computer or on your NVIDIA Brev cloud GPU."""
 import secrets
 
-from PySide6.QtCore import QProcess, Qt
 from PySide6.QtGui import QGuiApplication
-from PySide6.QtWidgets import (QApplication, QButtonGroup, QDialog, QDialogButtonBox, QFormLayout,
-                               QHBoxLayout, QLabel, QLineEdit, QPushButton, QRadioButton,
-                               QVBoxLayout)
+from PySide6.QtWidgets import (QButtonGroup, QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout,
+                               QLabel, QLineEdit, QPushButton, QRadioButton, QVBoxLayout)
 
 from . import cloud
 
 HELP = (
-    "<b>How the cloud GPU works</b><ol>"
-    "<li>On <a href='https://brev.nvidia.com' style='color:#6cb4ff'>brev.nvidia.com</a>, create a GPU environment "
-    "(any NVIDIA GPU works; an L4 or T4 is plenty).</li>"
-    "<li>In its terminal: clone this repository and run <code>bash server/setup.sh</code>, "
-    "then start the server with the access token below (see <code>server/README.md</code>)."
-    "</li>"
-    "<li>Here: enter the instance name and click <b>Connect</b> (needs the Brev CLI and "
-    "<code>brev login</code> once), then <b>Test Connection</b>.</li></ol>"
-    "Brev bills by the hour while the instance runs, so <b>stop it</b> in the Brev console "
-    "when you're done editing.")
+    "<b>How it works</b><br>When PhotoForge opens, it connects to your GPU automatically if "
+    "it's running (it opens <code>brev port-forward</code> in the background). If the GPU is "
+    "off, heavy AI runs on this computer. Start the GPU later? Click <b>Try Connecting "
+    "Again</b>.<br><br>First-time setup of the GPU is in <code>server/README.md</code>. "
+    "Brev bills by the hour while the instance runs, so <b>stop it</b> when you're done "
+    "(<code>brev stop &lt;name&gt;</code>).")
+
+STATE_ICON = {"connected": "✓", "connecting": "…", "offline": "✗", "local": "•"}
 
 
 class AISettingsDialog(QDialog):
-    def __init__(self, parent, forwarder):
+    def __init__(self, parent, connection):
         super().__init__(parent)
         self.setWindowTitle("AI Settings")
         self.setMinimumWidth(580)
-        self.setMinimumHeight(500)
-        self.forwarder = forwarder
+        self.conn = connection
         s = cloud.get_settings()
         lay = QVBoxLayout(self)
 
         lay.addWidget(QLabel("<b>Where should heavy AI run?</b> (background removal, object "
                              "selection, filling removed areas)"))
         self.local = QRadioButton("This computer: free and private, works offline")
-        self.remote = QRadioButton("My NVIDIA cloud GPU (Brev): fast on any laptop, and "
-                                   "enables Fill Removed Area")
+        self.remote = QRadioButton("My NVIDIA cloud GPU (Brev) when it's on: fast on any "
+                                   "laptop, and enables Fill Removed Area")
         group = QButtonGroup(self)
         group.addButton(self.local)
         group.addButton(self.remote)
@@ -46,15 +41,8 @@ class AISettingsDialog(QDialog):
 
         form = QFormLayout()
         self.instance = QLineEdit(s["instance"])
-        self.instance.setPlaceholderText("your Brev instance name, e.g. photoforge-gpu")
-        row = QHBoxLayout()
-        row.addWidget(self.instance)
-        self.connect_btn = QPushButton("Connect")
-        self.connect_btn.setToolTip("Runs `brev port-forward <instance> --port 8765:8765` so the "
-                                    "app can reach the server securely.")
-        self.connect_btn.clicked.connect(self._connect)
-        row.addWidget(self.connect_btn)
-        form.addRow("Brev instance", row)
+        self.instance.setPlaceholderText("your Brev instance name (see `brev ls`)")
+        form.addRow("Brev instance", self.instance)
         self.url = QLineEdit(s["url"])
         form.addRow("Server address", self.url)
         self.token = QLineEdit(s["token"])
@@ -65,7 +53,7 @@ class AISettingsDialog(QDialog):
         gen.setToolTip("Create a new random access token")
         gen.clicked.connect(self._new_token)
         copy = QPushButton("Copy")
-        copy.setToolTip("Copy the token so you can set PHOTOFORGE_TOKEN on the server")
+        copy.setToolTip("Copy the token so you can set it on the GPU server")
         copy.clicked.connect(lambda: QGuiApplication.clipboard().setText(self.token.text()))
         row.addWidget(gen)
         row.addWidget(copy)
@@ -73,9 +61,10 @@ class AISettingsDialog(QDialog):
         lay.addLayout(form)
 
         row = QHBoxLayout()
-        test = QPushButton("Test Connection")
-        test.clicked.connect(self._test)
-        row.addWidget(test)
+        self.retry_btn = QPushButton("Try Connecting Again")
+        self.retry_btn.setToolTip("Connect to your GPU now (e.g. after starting it in Brev)")
+        self.retry_btn.clicked.connect(self._retry)
+        row.addWidget(self.retry_btn)
         self.status = QLabel()
         self.status.setWordWrap(True)
         row.addWidget(self.status, 1)
@@ -83,7 +72,6 @@ class AISettingsDialog(QDialog):
 
         help_lbl = QLabel(HELP)
         help_lbl.setWordWrap(True)
-        help_lbl.setOpenExternalLinks(True)
         help_lbl.setObjectName("hintLabel")
         lay.addWidget(help_lbl)
 
@@ -91,70 +79,40 @@ class AISettingsDialog(QDialog):
         bb.accepted.connect(self._save)
         bb.rejected.connect(self.reject)
         lay.addWidget(bb)
-        self._update_connect_state()
+
+        self.conn.changed.connect(self._show_state)
+        self._show_state(self.conn.state, self.conn.message)
+
+    def _show_state(self, state, message):
+        self.status.setText(f"{STATE_ICON.get(state, '')} {message}")
+        self.retry_btn.setEnabled(state != "connecting")
 
     def _new_token(self):
         self.token.setEchoMode(QLineEdit.Normal)
         self.token.setText(secrets.token_urlsafe(32))
 
-    def _update_connect_state(self):
-        running = self.forwarder.running()
-        self.connect_btn.setText("Disconnect" if running else "Connect")
-        if running:
-            self.status.setText(f"Connected to Brev instance '{self.forwarder.instance}'.")
-
-    def _connect(self):
-        if self.forwarder.running():
-            self.forwarder.stop()
-            self.status.setText("Disconnected.")
-            self._update_connect_state()
-            return
-        if not cloud.brev_cli():
-            self.status.setText("The Brev CLI isn't installed. Install it from "
-                                "docs.nvidia.com/brev, run `brev login`, then try again.")
-            return
-        name = self.instance.text().strip()
-        if not name:
-            self.status.setText("Enter your Brev instance name first.")
-            return
-        err = self.forwarder.start(name)
-        self.status.setText(err or f"Connecting to '{name}'… then click Test Connection.")
-        self._update_connect_state()
-
-    def _test(self):
-        QApplication.setOverrideCursor(Qt.WaitCursor)
-        try:
-            info = cloud.Client(self.url.text(), self.token.text(), timeout=15).health()
-            self.status.setText(f"✓ Connected: server is running on {info['device']}.")
-        except cloud.CloudError as e:
-            self.status.setText(f"✗ {e}")
-        finally:
-            QApplication.restoreOverrideCursor()
-
-    def _save(self):
+    def _store(self):
         cloud.save_settings("cloud" if self.remote.isChecked() else "local", self.url.text(),
                             self.token.text(), self.instance.text().strip())
+
+    def _retry(self):
+        if not self.remote.isChecked():
+            self.remote.setChecked(True)
+        self._store()
+        self.conn.retry()
+
+    def _save(self):
+        self._store()
+        if cloud.prefers_cloud():
+            if self.conn.state != "connected":
+                self.conn.retry()
+        else:
+            self.conn.stop()
         self.accept()
 
-
-class BrevForwarder:
-    """Keeps `brev port-forward` running in the background while the app is open."""
-
-    def __init__(self, parent):
-        self.proc = QProcess(parent)
-        self.instance = None
-
-    def running(self):
-        return self.proc.state() != QProcess.NotRunning
-
-    def start(self, instance, port=8765):
-        self.instance = instance
-        self.proc.start(cloud.brev_cli(), ["port-forward", instance, "--port", f"{port}:{port}"])
-        if not self.proc.waitForStarted(5000):
-            return "Couldn't start the Brev CLI."
-        return None
-
-    def stop(self):
-        if self.running():
-            self.proc.kill()
-            self.proc.waitForFinished(3000)
+    def done(self, result):
+        try:
+            self.conn.changed.disconnect(self._show_state)
+        except (RuntimeError, TypeError):
+            pass
+        super().done(result)

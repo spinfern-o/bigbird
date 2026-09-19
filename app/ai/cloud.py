@@ -4,7 +4,6 @@ Also decides, per the user's AI Settings, whether heavy AI runs locally or in th
 """
 import io
 import json
-import shutil
 import urllib.error
 import urllib.request
 
@@ -43,26 +42,45 @@ def save_settings(mode, url, token, instance):
     s.setValue("ai/brev_instance", instance)
 
 
-def use_cloud():
+_state = {"connected": False}
+_listeners = []
+
+
+def prefers_cloud():
+    """The user chose the cloud GPU in AI Settings (it may not be connected right now)."""
     return get_settings()["mode"] == "cloud"
 
 
+def set_connected(value):
+    _state["connected"] = bool(value)
+
+
+def is_connected():
+    return _state["connected"]
+
+
+def on_connection_lost(callback):
+    _listeners.append(callback)
+
+
+def use_cloud():
+    """Run heavy AI in the cloud now? Only when chosen *and* connected; otherwise locally."""
+    return prefers_cloud() and _state["connected"]
+
+
 def where():
-    return "NVIDIA cloud GPU" if use_cloud() else None
-
-
-def brev_cli():
-    return shutil.which("brev")
+    return "your NVIDIA cloud GPU" if use_cloud() else None
 
 
 # --------------------------------------------------------------------------- client
 
 class Client:
-    def __init__(self, url=None, token=None, timeout=120):
+    def __init__(self, url=None, token=None, timeout=120, notify=True):
         s = get_settings()
         self.url = (url or s["url"]).rstrip("/")
         self.token = token if token is not None else s["token"]
         self.timeout = timeout
+        self.notify = notify  # tell listeners if an established connection drops
 
     def _request(self, path, body=None):
         req = urllib.request.Request(
@@ -81,10 +99,14 @@ class Client:
                 msg = "The access token doesn't match the server's PHOTOFORGE_TOKEN."
             raise CloudError(msg) from None
         except (urllib.error.URLError, OSError) as e:
+            if self.notify and _state["connected"]:
+                _state["connected"] = False
+                for cb in list(_listeners):
+                    cb()
             raise CloudError(
                 f"Can't reach the cloud GPU at {self.url} ({getattr(e, 'reason', e)}).\n\n"
-                "Check that the Brev instance is running, the PhotoForge server is started on "
-                "it, and `brev port-forward` is connected (AI → AI Settings → Connect).") from None
+                "Check that your Brev GPU instance is running, then click Try Connecting Again "
+                "in AI → AI Settings.") from None
 
     def _post(self, path, **arrays):
         buf = io.BytesIO()

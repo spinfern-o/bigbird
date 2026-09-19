@@ -19,7 +19,8 @@ from .renderer import Renderer
 from .selection import apply_masked
 from .selection_actions import SELECT_TOOL_INFO, SelectionActions
 from .ai import cloud as ai_cloud, models as ai_models, tasks as ai_tasks
-from .ai.settings_dialog import AISettingsDialog, BrevForwarder
+from .ai.connection import CloudConnection
+from .ai.settings_dialog import AISettingsDialog
 from .ai.outline import OutlineEditor, solidify, trace_mask
 from .ai.select import ObjectSelector
 from .ai.panel import AIPanel
@@ -862,7 +863,15 @@ class MainWindow(SelectionActions, QMainWindow):
                            "Fill the gap left by removed objects on your NVIDIA cloud GPU")
         self.a_ai_settings = A("AI Settings…", self.ai_settings, None,
                                "Run heavy AI on this computer or your NVIDIA cloud GPU")
-        self.brev = BrevForwarder(self)
+        self.cloud_conn = CloudConnection(self)
+        self.cloud_conn.changed.connect(self._cloud_changed)
+        self.cloud_lbl = QPushButton()
+        self.cloud_lbl.setFlat(True)
+        self.cloud_lbl.setCursor(Qt.PointingHandCursor)
+        self.cloud_lbl.clicked.connect(self.ai_settings)
+        self.statusBar().addPermanentWidget(self.cloud_lbl)
+        self._cloud_changed(self.cloud_conn.state, self.cloud_conn.message)
+        QTimer.singleShot(400, self.cloud_conn.start)   # auto-connect if the GPU is on
         for a in (self.a_ai_bg, self.a_ai_refine, self.a_ai_obj, self.a_ai_refine_rm,
                   self.a_ai_fill):
             self.ai_menu.addAction(a)
@@ -1150,10 +1159,17 @@ class MainWindow(SelectionActions, QMainWindow):
         return index, np.clip(removed + 0.5, 0, 255).astype(np.uint8)
 
     def ai_settings(self):
-        if AISettingsDialog(self, self.brev).exec():
-            self.ai_panel.refresh()
-            where = "your NVIDIA cloud GPU" if ai_cloud.use_cloud() else "this computer"
-            self.hint_lbl.setText(f"Heavy AI will now run on {where}.")
+        AISettingsDialog(self, self.cloud_conn).exec()
+        self.ai_panel.refresh()
+
+    def _cloud_changed(self, state, message):
+        text = {"connected": "☁ GPU connected", "connecting": "☁ Connecting…",
+                "offline": "☁ GPU off: using this PC", "local": "💻 AI on this PC"}[state]
+        self.cloud_lbl.setText(text)
+        self.cloud_lbl.setToolTip(message + "\nClick for AI Settings.")
+        self.ai_panel.refresh()
+        if state in ("connected", "offline"):
+            self.hint_lbl.setText(message)
 
     def ai_fill_removed(self):
         """Fill the transparent gap left by Remove Objects, on the cloud GPU."""
@@ -1165,12 +1181,21 @@ class MainWindow(SelectionActions, QMainWindow):
                                     "Remove some objects first (Select Object(s) to Remove).")
             return
         if not ai_cloud.use_cloud():
-            r = QMessageBox.question(
-                self, "Fill Removed Area",
-                "Filling runs on your NVIDIA cloud GPU (Brev), which isn't set up yet.\n\n"
-                "Open AI Settings now?")
-            if r == QMessageBox.Yes:
-                self.ai_settings()
+            if ai_cloud.prefers_cloud():
+                r = QMessageBox.question(
+                    self, "Fill Removed Area",
+                    "Filling runs on your NVIDIA cloud GPU, which isn't connected right now:\n"
+                    f"{self.cloud_conn.message}\n\nStart the GPU in Brev if needed, then click "
+                    "Yes to try connecting again.")
+                if r == QMessageBox.Yes:
+                    self.cloud_conn.retry()
+            else:
+                r = QMessageBox.question(
+                    self, "Fill Removed Area",
+                    "Filling runs on your NVIDIA cloud GPU (Brev), which isn't set up yet.\n\n"
+                    "Open AI Settings now?")
+                if r == QMessageBox.Yes:
+                    self.ai_settings()
             return
         index, removed = found
         layer = self.doc.layers[index]
@@ -1305,7 +1330,7 @@ use <b>Export</b> to save a finished copy, or <b>Save Project</b> to keep workin
 
     def closeEvent(self, e):
         if self._confirm_discard():
-            self.brev.stop()
+            self.cloud_conn.stop()
             QThreadPool.globalInstance().waitForDone(5000)
             e.accept()
         else:

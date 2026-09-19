@@ -118,7 +118,9 @@ class AIPanel(QScrollArea):
 
     def refresh(self):
         if cloud.use_cloud():
-            lines = [f"Heavy AI runs on: your NVIDIA cloud GPU ({cloud.get_settings()['url']})"]
+            lines = ["Heavy AI runs on: your NVIDIA cloud GPU (connected)"]
+        elif cloud.prefers_cloud():
+            lines = [f"Cloud GPU not connected, so AI runs on your {models.device_name()}"]
         else:
             lines = [f"Runs on: your {models.device_name()}"]
         for m in models.MODELS.values():

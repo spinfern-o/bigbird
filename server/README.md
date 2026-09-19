@@ -29,7 +29,7 @@ cd bigbird
 bash server/setup.sh
 ```
 
-## 3. Start the server
+## 3. Make the server start automatically (once)
 
 In PhotoForge open **AI → AI Settings…**, click **New** next to *Access token*, then **Copy**.
 On the GPU machine:
@@ -37,25 +37,32 @@ On the GPU machine:
 ```bash
 cd bigbird
 export PHOTOFORGE_TOKEN='paste-the-token-here'
-bash server/start.sh
+bash server/install_service.sh
 ```
 
-## 4. Connect PhotoForge
+This installs the server as a system service. It starts by itself whenever the instance
+boots, remembers the token, and restarts if it ever crashes.
 
-1. Install the [Brev CLI](https://docs.nvidia.com/brev/) on your PC and run `brev login` once.
-2. In **AI → AI Settings…**: choose **My NVIDIA cloud GPU (Brev)**, enter the instance
-   name, click **Connect**, then **Test Connection**. It should report `NVIDIA GPU (CUDA)`.
-3. Click **Save**. Remove Background, Select Subject, Select Object(s) to Remove and
-   **Fill Removed Area** now run on the cloud GPU.
+## 4. Connect PhotoForge (once)
 
-(Alternatively run `brev port-forward photoforge-gpu --port 8765:8765` yourself and leave
-it open.)
+1. Install the [Brev CLI](https://docs.nvidia.com/brev/) (on Windows: inside Ubuntu/WSL) and
+   run `brev login` once.
+2. In **AI → AI Settings…**: choose **My NVIDIA cloud GPU (Brev)**, enter the **Brev
+   instance** name (see `brev ls`), and click **Save**.
+
+From then on it's automatic: when PhotoForge opens, it checks whether your instance is
+running and, if it is, opens a secure SSH tunnel in the background and connects. The bottom
+status bar shows **☁ GPU connected**. If the GPU is off, PhotoForge uses this computer. After
+starting the GPU later, click **Try Connecting Again** in AI Settings (or click the status).
+
+Everyday use: `brev start <name>`, then open PhotoForge and edit. When you're done,
+`brev stop <name>`.
 
 ## Costs
 
 Brev bills per hour while the instance runs. **Stop the instance in the Brev console
 when you're done editing**. A stopped instance only incurs a small storage charge; delete
-it to remove that too. After restarting it, run `bash server/start.sh` again.
+it to remove that too. The server starts by itself when the instance boots.
 
 ## API (for reference)
 

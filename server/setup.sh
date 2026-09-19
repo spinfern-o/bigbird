@@ -4,7 +4,13 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-python3 -m venv .venv-server
+# Ubuntu images often lack the venv module; install it automatically if needed.
+if ! python3 -m venv --help >/dev/null 2>&1 || ! python3 -c "import ensurepip" 2>/dev/null; then
+    PYV="$(python3 -c 'import sys; print(f"{sys.version_info[0]}.{sys.version_info[1]}")')"
+    echo "Installing python${PYV}-venv (needs sudo)..."
+    sudo apt-get update -qq && sudo apt-get install -y -qq "python${PYV}-venv" python3-venv
+fi
+[ -x .venv-server/bin/pip ] || { rm -rf .venv-server; python3 -m venv .venv-server; }
 .venv-server/bin/python -m pip install --upgrade pip
 .venv-server/bin/python -m pip install -r server/requirements.txt
 
@@ -28,6 +34,6 @@ if "CUDAExecutionProvider" not in providers:
 EOF
 
 echo
-echo "Setup done. Start the server with:"
+echo "Setup done. Make the server start automatically (recommended):"
 echo "  export PHOTOFORGE_TOKEN='<the access token from PhotoForge > AI Settings>'"
-echo "  bash server/start.sh"
+echo "  bash server/install_service.sh"
