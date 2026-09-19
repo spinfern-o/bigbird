@@ -29,8 +29,8 @@ from urllib.parse import parse_qs, urlencode, urlparse
 from PySide6.QtCore import QObject, QUrl, Signal
 
 # Where the account web page is hosted. Override in production, e.g.
-#   export BIGBIRD_WEB_URL="https://your-app.vercel.app"
-DEFAULT_WEB_URL = "http://localhost:3000"
+#   export BIGBIRD_WEB_URL="http://localhost:3000"  # local web development
+DEFAULT_WEB_URL = "https://www.phrame.tech"
 
 # Abandon a pending sign-in if the browser never comes back.
 LOGIN_TIMEOUT_SECONDS = 300
