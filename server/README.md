@@ -1,100 +1,88 @@
-# PhotoForge GPU server (NVIDIA Brev)
+# PhotoForge Brev GPU accelerator
 
-Runs PhotoForge's heavy AI on a cloud NVIDIA GPU so it works fast on any laptop:
-background removal / Select Subject (BiRefNet), click-to-select objects (SAM 2.1), and
-**Fill Removed Area** (LaMa, cloud only). Light work such as retouching and selections
-stays on your PC.
+This server optionally accelerates the same commercially approved local PhotoForge AI
+models on the project's NVIDIA Brev machine:
+
+- Remove Background / Select Subject — BiRefNet-lite
+- Click-to-select / object selection — SAM 2.1 Tiny
+
+It is **not** the generative-editing backend. Describe Your Edit / Generative Fill stays on
+the signed-in `phrame.tech/api/edit` → NVIDIA NIM path in `app/ai/base.py`. Keeping these
+paths separate avoids having two competing implementations of roadmap A6.
 
 ```
-PhotoForge (your PC) ──localhost:8765──▶ brev port-forward ──▶ Brev GPU: server/photoforge_server.py
+PhotoForge desktop
+    │
+    │ localhost:8765 through an authenticated SSH tunnel
+    ▼
+Brev instance: bigbird-gpu-dev
+    │
+    ├── BiRefNet-lite
+    └── SAM 2.1 Tiny
 ```
 
-## Automatic setup (recommended)
+## Normal setup
 
-You only need to:
-1. Create a GPU instance at [brev.nvidia.com](https://brev.nvidia.com) (any NVIDIA GPU).
-2. On your PC, install the Brev CLI (on Windows, inside Ubuntu/WSL) and run `brev login` once.
-3. In PhotoForge choose **AI → AI Settings… → My NVIDIA cloud GPU (Brev)** and click **Save**.
+1. Start the `bigbird-gpu-dev` instance in the Brev dashboard.
+2. Install the Brev CLI on the computer running PhotoForge (on Windows, inside Ubuntu/WSL)
+   and run `brev login` once.
+3. In PhotoForge open **AI → AI Settings…**, choose **My NVIDIA cloud GPU (Brev)**, and save.
 
-The instance name is set in `app/ai/cloud.py` (`BREV_INSTANCE = "bigbird-gpu-dev"`). Brev
-names don't change when an instance is stopped or started; update it only if the instance
-is deleted and recreated under another name.
+PhotoForge then manages the rest:
 
-PhotoForge then does everything else by itself:
-- creates the access token
-- copies this server to the GPU over SSH, installs it (about 5 minutes the first time) and
-  makes it start at boot
-- keeps it updated whenever PhotoForge's AI code changes
-- connects automatically whenever you open the app and the GPU is on
+- creates a random PhotoForge server access token locally;
+- opens the SSH tunnel;
+- copies the exact server files to the Brev machine when needed;
+- runs `server/setup.sh` on first setup;
+- installs the server as a boot service;
+- compares a server-file fingerprint on later connections and updates the server when the
+  bundled files change.
 
-Start and stop the GPU yourself in the Brev dashboard. If PhotoForge was opened before
-the GPU was on, click **Try Connecting Again** in AI Settings.
+If the Brev GPU is stopped or unreachable, PhotoForge falls back to the local implementation
+for these tools. Generative cloud editing is unaffected because it uses the separate
+`phrame.tech/api/edit` path.
 
-The manual steps below are only for reference or troubleshooting.
+The server listens on `127.0.0.1` only and also requires
+`Authorization: Bearer <PHOTOFORGE_TOKEN>`. It is not intended to be exposed directly to
+the public internet.
 
-The server listens only on `127.0.0.1` of the GPU machine and requires an access token.
-It's reachable only through `brev port-forward` (an authenticated tunnel), never directly
-from the internet.
+## Manual troubleshooting
 
-## 1. Create the GPU machine (once)
-
-1. Go to [brev.nvidia.com](https://brev.nvidia.com), then **GPUs → Create Environment**.
-2. Choose any NVIDIA GPU. An **L4** or **T4** is plenty; these models are small.
-3. Give it a name, e.g. `photoforge-gpu`, and create it.
-
-## 2. Install the server on it (once)
-
-Open the instance's terminal (Brev console → **Open Notebook/Terminal**, or `brev shell photoforge-gpu`):
+From the Brev machine, from the copied `~/photoforge-server` directory:
 
 ```bash
-git clone https://github.com/spinfern-o/bigbird.git
-cd bigbird
 bash server/setup.sh
-```
-
-## 3. Make the server start automatically (once)
-
-In PhotoForge open **AI → AI Settings…**, click **New** next to *Access token*, then **Copy**.
-On the GPU machine:
-
-```bash
-cd bigbird
-export PHOTOFORGE_TOKEN='paste-the-token-here'
+export PHOTOFORGE_TOKEN='<token shown in PhotoForge AI Settings>'
 bash server/install_service.sh
 ```
 
-This installs the server as a system service. It starts by itself whenever the instance
-boots, remembers the token, and restarts if it ever crashes.
+For a temporary foreground run:
 
-## 4. Connect PhotoForge (once)
+```bash
+export PHOTOFORGE_TOKEN='<token>'
+.venv-server/bin/python -m server.photoforge_server --port 8765
+```
 
-1. Install the [Brev CLI](https://docs.nvidia.com/brev/) (on Windows: inside Ubuntu/WSL) and
-   run `brev login` once.
-2. In **AI → AI Settings…**: choose **My NVIDIA cloud GPU (Brev)**, enter the **Brev
-   instance** name (see `brev ls`), and click **Save**.
+From the desktop side, the equivalent tunnel is:
 
-From then on it's automatic: when PhotoForge opens, it checks whether your instance is
-running and, if it is, opens a secure SSH tunnel in the background and connects. The bottom
-status bar shows **☁ GPU connected**. If the GPU is off, PhotoForge uses this computer. After
-starting the GPU later, click **Try Connecting Again** in AI Settings (or click the status).
+```bash
+ssh -N -L 8765:127.0.0.1:8765 bigbird-gpu-dev
+```
 
-Everyday use: `brev start <name>`, then open PhotoForge and edit. When you're done,
-`brev stop <name>`.
+PhotoForge normally creates and owns this tunnel automatically.
 
-## Costs
+## API
 
-Brev bills per hour while the instance runs. **Stop the instance in the Brev console
-when you're done editing**. A stopped instance only incurs a small storage charge; delete
-it to remove that too. The server starts by itself when the instance boots.
-
-## API (for reference)
-
-All endpoints need `Authorization: Bearer <PHOTOFORGE_TOKEN>`. Bodies are numpy `.npz`.
+All endpoints require the bearer token. Bodies are NumPy `.npz` payloads.
 
 | Endpoint | Request | Response |
 |---|---|---|
-| `GET /health` | – | JSON: device, providers, models |
+| `GET /health` | — | JSON: device, providers, model state, server version |
 | `POST /remove_background` | `image` (HxWx3 uint8) | `mask` (HxW uint8) |
 | `POST /sam/encode` | `image` | `session` |
-| `POST /sam/decode` | `session`, `points` (Nx2), `labels` (N) | `scores` (3), `logits` (3x256x256) |
-| `POST /fill` | `image` (crop), `mask` (crop) | `image` (filled crop) |
+| `POST /sam/decode` | `session`, `points`, `labels` | `scores`, `logits` |
+
+## Costs
+
+Brev bills while the GPU machine is running. Stop the instance in the Brev dashboard when
+you are finished using the accelerator.
