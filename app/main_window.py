@@ -18,9 +18,11 @@ from .panels import AdjustPanel, ColorButton, LayersPanel, NoWheelSlider
 from .renderer import Renderer
 from .selection import apply_masked
 from .selection_actions import SELECT_TOOL_INFO, SelectionActions
-from .ai import models as ai_models, tasks as ai_tasks
+from .ai import cloud as ai_cloud, models as ai_models, tasks as ai_tasks
+from .ai.connection import CloudConnection
+from .ai.settings_dialog import AISettingsDialog
 from .ai.outline import OutlineEditor, solidify, trace_mask
-from .ai.select import ObjectSelector
+from .ai.object_select import ObjectSelector
 from .ai.panel import AIPanel
 from .ai.runner import run_ai
 
@@ -868,15 +870,29 @@ class MainWindow(SelectionActions, QMainWindow):
                           None, "AI: click objects to select them, then remove them")
         self.a_ai_refine_rm = A("Refine Removal…", self.ai_refine_removal, None,
                                 "Adjust what was removed with draggable dots")
+        self.a_ai_settings = A("AI Settings…", self.ai_settings, None,
+                               "Optionally accelerate local AI on the Brev NVIDIA GPU")
+        self.cloud_conn = CloudConnection(self)
+        self.cloud_conn.changed.connect(self._cloud_changed)
+        self.cloud_lbl = QPushButton()
+        self.cloud_lbl.setFlat(True)
+        self.cloud_lbl.setCursor(Qt.PointingHandCursor)
+        self.cloud_lbl.clicked.connect(self.ai_settings)
+        self.statusBar().addPermanentWidget(self.cloud_lbl)
+        self._cloud_changed(self.cloud_conn.state, self.cloud_conn.message)
+        QTimer.singleShot(400, self.cloud_conn.start)
         for a in (self.a_ai_bg, self.a_ai_refine, self.a_ai_obj, self.a_ai_refine_rm):
             self.ai_menu.addAction(a)
             self.doc_actions.append(a)
             a.setEnabled(self.doc is not None)
+        self.ai_menu.addSeparator()
+        self.ai_menu.addAction(self.a_ai_settings)
         p = self.ai_panel
         p.removeBackground.connect(self.ai_remove_background)
         p.refineOutline.connect(self.ai_refine_outline)
         p.removeObject.connect(lambda: self.select_tool("ai_remove"))
         p.refineRemoval.connect(self.ai_refine_removal)
+        p.openSettings.connect(self.ai_settings)
         self.canvas.outlineApply.connect(self._outline_apply)
         self.canvas.outlineCancel.connect(self._outline_cancel)
         self._outline_mode = None
@@ -1085,8 +1101,8 @@ class MainWindow(SelectionActions, QMainWindow):
             self.hint_lbl.setText("Background removed! Your original is kept (hidden) in Layers. "
                                   "Not perfect? Click AI → Refine Outline to adjust the edge.")
 
-        run_ai(self, ["birefnet_lite"], "Remove Background", "Finding the subject…",
-               lambda: ai_tasks.remove_background(comp), done)
+        run_ai(self, ai_cloud.models_needed(["birefnet_lite"]), "Remove Background",
+               "Finding the subject…", lambda: ai_cloud.remove_background(comp), done)
 
     # ------------------------------------------------------------------ select & remove objects
     def _start_select(self):
@@ -1102,6 +1118,7 @@ class MainWindow(SelectionActions, QMainWindow):
                 self._end_outline()
             sel = ObjectSelector(self.canvas, sam)
             sel.on_change = self._select_changed
+            sel.on_error = lambda msg: QMessageBox.warning(self, "Select Objects", msg)
             self.canvas.outline = sel
             self._outline_mode = "ai_select"
             self.ai_panel.refresh()
@@ -1111,8 +1128,8 @@ class MainWindow(SelectionActions, QMainWindow):
         self.select_info.setText("Getting ready…")
         self.remove_sel_btn.setEnabled(False)
         self.smaller_btn.setEnabled(False)
-        run_ai(self, ["sam2"], "Select Objects", "Looking at the photo…",
-               lambda: ai_tasks.SamImage(comp), done)
+        run_ai(self, ai_cloud.models_needed(["sam2"]), "Select Objects", "Looking at the photo…",
+               lambda: ai_cloud.sam_image(comp), done)
 
     def _select_changed(self):
         sel = self.canvas.outline
@@ -1132,6 +1149,19 @@ class MainWindow(SelectionActions, QMainWindow):
         if self._outline_mode == "ai_select":
             self.canvas.outline.smaller_part()
             self.canvas.setFocus()
+
+    def ai_settings(self):
+        AISettingsDialog(self, self.cloud_conn).exec()
+        self.ai_panel.refresh()
+
+    def _cloud_changed(self, state, message):
+        text = {"connected": "☁ GPU connected", "connecting": "☁ Connecting…",
+                "offline": "☁ GPU off: using this PC", "local": "💻 AI on this PC"}[state]
+        self.cloud_lbl.setText(text)
+        self.cloud_lbl.setToolTip(message + "\nClick for AI Settings.")
+        self.ai_panel.refresh()
+        if state in ("connected", "offline", "connecting"):
+            self.hint_lbl.setText(message)
 
     def ai_refine_removal(self):
         """Re-open the removal outline of an "Objects removed" layer."""
@@ -1249,6 +1279,7 @@ use <b>Export</b> to save a finished copy, or <b>Save Project</b> to keep workin
 
     def closeEvent(self, e):
         if self._confirm_discard():
+            self.cloud_conn.stop()
             QThreadPool.globalInstance().waitForDone(5000)
             e.accept()
         else:

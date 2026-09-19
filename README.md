@@ -107,6 +107,12 @@ Point the desktop app at it with `PHOTOFORGE_CLOUD_URL`
   DirectML when available, and fall back to the CPU. All are commercially licensed
   (Help → Open-source Licenses).
 
+**Optional Brev acceleration:** AI → AI Settings can run Remove Background, Select Subject,
+and SAM object selection on the project's NVIDIA Brev GPU instead of the laptop. This is
+only an accelerator for the same approved local models. Generative editing/fill remains on
+the signed-in `phrame.tech/api/edit` → NVIDIA NIM path described above.
+Setup and troubleshooting: [server/README.md](server/README.md).
+
 **Beginner help**: welcome screen, plain-English tooltips on every control,
 status-bar hints for each tool, Quick Start guide (F1), double-click a slider's name to reset.
 
