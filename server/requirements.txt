@@ -1,0 +1,4 @@
+numpy>=1.26
+opencv-python-headless>=4.8
+# ONNX Runtime with NVIDIA CUDA + cuDNN pulled in from pip (no system CUDA install needed)
+onnxruntime-gpu[cuda,cudnn]>=1.20

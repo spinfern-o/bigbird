@@ -415,7 +415,7 @@ class SelectionActions:
 
     # ------------------------------------------------------------------ select subject
     def _select_subject(self):
-        from .ai import tasks as ai_tasks
+        from .ai import cloud
         from .ai.outline import solidify
         from .ai.runner import run_ai
         comp = np.array(self.doc.composite())
@@ -423,8 +423,8 @@ class SelectionActions:
         def done(mask):
             self.doc.set_selection(solidify(mask, mask, 1.0), "Select subject")
 
-        run_ai(self, ["birefnet_lite"], "Select Subject", "Finding the subject…",
-               lambda: ai_tasks.remove_background(comp), done)
+        run_ai(self, cloud.models_needed(["birefnet_lite"]), "Select Subject",
+               "Finding the subject…", lambda: cloud.remove_background(comp), done)
 
     # ------------------------------------------------------------------ brushes
     def _stroke_finished(self, px, label):

@@ -20,7 +20,8 @@ class ModelInfo:
     size_mb: int
     license: str
     homepage: str
-    gpu: bool         # False = known not to work with DirectML, always use CPU
+    gpu: bool         # False = known not to work with DirectML (CUDA is still used when present)
+    server_only: bool = False  # only runs on the cloud GPU server, never downloaded by the app
 
 
 MODELS = {
@@ -37,6 +38,10 @@ MODELS = {
          (_SAM + "prompt_encoder_mask_decoder.onnx_data",
           "sam2.1_tiny/prompt_encoder_mask_decoder.onnx_data")),
         155, "Apache 2.0", "https://github.com/facebookresearch/sam2", gpu=True),
+    "lama": ModelInfo(
+        "lama", "LaMa (big-lama)", "Fill removed areas (cloud GPU)",
+        (("https://huggingface.co/Carve/LaMa-ONNX/resolve/main/lama_fp32.onnx", "lama_fp32.onnx"),),
+        208, "Apache 2.0", "https://github.com/advimman/lama", gpu=False, server_only=True),
 }
 
 
@@ -95,26 +100,40 @@ _sessions = {}
 _lock = threading.Lock()
 
 
-def gpu_available():
+def _gpu_provider():
+    """CUDA on NVIDIA servers (e.g. the Brev cloud GPU), DirectML on Windows PCs."""
     try:
         import onnxruntime as ort
-        return "DmlExecutionProvider" in ort.get_available_providers()
+        available = ort.get_available_providers()
     except ImportError:
-        return False
+        return None
+    for p in ("CUDAExecutionProvider", "DmlExecutionProvider"):
+        if p in available:
+            return p
+    return None
+
+
+def gpu_available():
+    return _gpu_provider() is not None
 
 
 def device_name():
-    return "graphics card (DirectML)" if gpu_available() else "processor (CPU)"
+    p = _gpu_provider()
+    if p == "CUDAExecutionProvider":
+        return "NVIDIA GPU (CUDA)"
+    return "graphics card (DirectML)" if p else "processor (CPU)"
 
 
 def _make_session(rel, use_gpu):
     import onnxruntime as ort
     opts = ort.SessionOptions()
     providers = ["CPUExecutionProvider"]
-    if use_gpu:
-        providers.insert(0, "DmlExecutionProvider")
-        opts.enable_mem_pattern = False  # required by DirectML
-        opts.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
+    p = _gpu_provider() if use_gpu else None
+    if p:
+        providers.insert(0, p)
+        if p == "DmlExecutionProvider":
+            opts.enable_mem_pattern = False  # required by DirectML
+            opts.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
     return ort.InferenceSession(_path(rel), sess_options=opts, providers=providers)
 
 
@@ -126,7 +145,8 @@ def run(key, feeds, part=None, gpu=True):
     with _lock:
         entry = _sessions.get(rel)
         if entry is None:
-            use_gpu = gpu and info.gpu and gpu_available()
+            # models marked gpu=False only fail on DirectML; CUDA is fine
+            use_gpu = gpu and gpu_available() and (info.gpu or _gpu_provider() == "CUDAExecutionProvider")
             try:
                 entry = (_make_session(rel, use_gpu), use_gpu)
             except Exception:

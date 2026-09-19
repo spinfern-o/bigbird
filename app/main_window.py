@@ -18,7 +18,8 @@ from .panels import AdjustPanel, ColorButton, LayersPanel, NoWheelSlider
 from .renderer import Renderer
 from .selection import apply_masked
 from .selection_actions import SELECT_TOOL_INFO, SelectionActions
-from .ai import models as ai_models, tasks as ai_tasks
+from .ai import cloud as ai_cloud, models as ai_models, tasks as ai_tasks
+from .ai.settings_dialog import AISettingsDialog, BrevForwarder
 from .ai.outline import OutlineEditor, solidify, trace_mask
 from .ai.select import ObjectSelector
 from .ai.panel import AIPanel
@@ -857,15 +858,25 @@ class MainWindow(SelectionActions, QMainWindow):
                           None, "AI: click objects to select them, then remove them")
         self.a_ai_refine_rm = A("Refine Removal…", self.ai_refine_removal, None,
                                 "Adjust what was removed with draggable dots")
-        for a in (self.a_ai_bg, self.a_ai_refine, self.a_ai_obj, self.a_ai_refine_rm):
+        self.a_ai_fill = A("Fill Removed Area (cloud GPU)", self.ai_fill_removed, None,
+                           "Fill the gap left by removed objects on your NVIDIA cloud GPU")
+        self.a_ai_settings = A("AI Settings…", self.ai_settings, None,
+                               "Run heavy AI on this computer or your NVIDIA cloud GPU")
+        self.brev = BrevForwarder(self)
+        for a in (self.a_ai_bg, self.a_ai_refine, self.a_ai_obj, self.a_ai_refine_rm,
+                  self.a_ai_fill):
             self.ai_menu.addAction(a)
             self.doc_actions.append(a)
             a.setEnabled(self.doc is not None)
+        self.ai_menu.addSeparator()
+        self.ai_menu.addAction(self.a_ai_settings)
         p = self.ai_panel
         p.removeBackground.connect(self.ai_remove_background)
         p.refineOutline.connect(self.ai_refine_outline)
         p.removeObject.connect(lambda: self.select_tool("ai_remove"))
         p.refineRemoval.connect(self.ai_refine_removal)
+        p.fillRemoved.connect(self.ai_fill_removed)
+        p.openSettings.connect(self.ai_settings)
         self.canvas.outlineApply.connect(self._outline_apply)
         self.canvas.outlineCancel.connect(self._outline_cancel)
         self._outline_mode = None
@@ -1074,8 +1085,8 @@ class MainWindow(SelectionActions, QMainWindow):
             self.hint_lbl.setText("Background removed! Your original is kept (hidden) in Layers. "
                                   "Not perfect? Click AI → Refine Outline to adjust the edge.")
 
-        run_ai(self, ["birefnet_lite"], "Remove Background", "Finding the subject…",
-               lambda: ai_tasks.remove_background(comp), done)
+        run_ai(self, ai_cloud.models_needed(["birefnet_lite"]), "Remove Background",
+               "Finding the subject…", lambda: ai_cloud.remove_background(comp), done)
 
     # ------------------------------------------------------------------ select & remove objects
     def _start_select(self):
@@ -1091,6 +1102,7 @@ class MainWindow(SelectionActions, QMainWindow):
                 self._end_outline()
             sel = ObjectSelector(self.canvas, sam)
             sel.on_change = self._select_changed
+            sel.on_error = lambda msg: QMessageBox.warning(self, "Select Objects", msg)
             self.canvas.outline = sel
             self._outline_mode = "ai_select"
             self.ai_panel.refresh()
@@ -1100,8 +1112,8 @@ class MainWindow(SelectionActions, QMainWindow):
         self.select_info.setText("Getting ready…")
         self.remove_sel_btn.setEnabled(False)
         self.smaller_btn.setEnabled(False)
-        run_ai(self, ["sam2"], "Select Objects", "Looking at the photo…",
-               lambda: ai_tasks.SamImage(comp), done)
+        run_ai(self, ai_cloud.models_needed(["sam2"]), "Select Objects", "Looking at the photo…",
+               lambda: ai_cloud.sam_image(comp), done)
 
     def _select_changed(self):
         sel = self.canvas.outline
@@ -1121,6 +1133,61 @@ class MainWindow(SelectionActions, QMainWindow):
         if self._outline_mode == "ai_select":
             self.canvas.outline.smaller_part()
             self.canvas.setFocus()
+
+    def _removal_layer(self):
+        """(index, removed mask) of the active or topmost "Objects removed" layer, or None."""
+        layers = self.doc.layers
+        index = self.doc.active
+        if layers[index].source is None:
+            index = next((i for i in range(len(layers) - 1, -1, -1)
+                          if layers[i].source is not None), None)
+        if index is None:
+            return None
+        layer = layers[index]
+        src_a = layer.source[..., 3].astype(np.float32)
+        cur_a = layer.pixels[..., 3].astype(np.float32)
+        removed = np.where(src_a > 0, 255 - cur_a * 255 / np.maximum(src_a, 1), 0)
+        return index, np.clip(removed + 0.5, 0, 255).astype(np.uint8)
+
+    def ai_settings(self):
+        if AISettingsDialog(self, self.brev).exec():
+            self.ai_panel.refresh()
+            where = "your NVIDIA cloud GPU" if ai_cloud.use_cloud() else "this computer"
+            self.hint_lbl.setText(f"Heavy AI will now run on {where}.")
+
+    def ai_fill_removed(self):
+        """Fill the transparent gap left by Remove Objects, on the cloud GPU."""
+        if not self.doc:
+            return
+        found = self._removal_layer()
+        if found is None or not (found[1] > 127).any():
+            QMessageBox.information(self, "Fill Removed Area",
+                                    "Remove some objects first (Select Object(s) to Remove).")
+            return
+        if not ai_cloud.use_cloud():
+            r = QMessageBox.question(
+                self, "Fill Removed Area",
+                "Filling runs on your NVIDIA cloud GPU (Brev), which isn't set up yet.\n\n"
+                "Open AI Settings now?")
+            if r == QMessageBox.Yes:
+                self.ai_settings()
+            return
+        index, removed = found
+        layer = self.doc.layers[index]
+        src = layer.source
+        rgb = np.ascontiguousarray(src[..., :3])
+
+        def done(result):
+            filled, blend = result
+            w = (blend.astype(np.float32) / 255.0)[..., None]
+            px = layer.pixels.copy()
+            px[..., :3] = np.clip(rgb * (1 - w) + filled * w + 0.5, 0, 255).astype(np.uint8)
+            px[..., 3] = src[..., 3]
+            self.doc.set_layer_pixels(px, "Fill removed area", index=index)
+            self.hint_lbl.setText("Filled on the cloud GPU. Ctrl+Z to undo.")
+
+        run_ai(self, [], "Fill Removed Area", "Filling in the background…",
+               lambda: ai_cloud.Client().fill(rgb, removed), done)
 
     def ai_refine_removal(self):
         """Re-open the removal outline of an "Objects removed" layer."""
@@ -1238,6 +1305,7 @@ use <b>Export</b> to save a finished copy, or <b>Save Project</b> to keep workin
 
     def closeEvent(self, e):
         if self._confirm_discard():
+            self.brev.stop()
             QThreadPool.globalInstance().waitForDone(5000)
             e.accept()
         else:

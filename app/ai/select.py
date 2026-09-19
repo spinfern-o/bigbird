@@ -69,6 +69,7 @@ class ObjectSelector:
         self.overlay = None
         self._history = []
         self.on_change = None
+        self.on_error = None
         self.item = SelectionItem(self)
         canvas.scene().addItem(self.item)
 
@@ -139,11 +140,23 @@ class ObjectSelector:
             return
         hit = self._object_at(x, y)
         self._save()
+        try:
+            changed = self._apply_click(x, y, hit, exclude, modifiers)
+        except Exception as e:  # e.g. the cloud GPU stopped responding
+            self._history.pop()
+            if self.on_error:
+                self.on_error(str(e))
+            return
+        if changed is False:
+            self._history.pop()
+            return
+        self._refresh()
+
+    def _apply_click(self, x, y, hit, exclude, modifiers):
         if exclude:
             target = hit if hit is not None else (len(self.objects) - 1 if self.objects else None)
             if target is None:
-                self._history.pop()
-                return
+                return False  # nothing to exclude from
             obj = self.objects[target]
             obj.points.append((x, y))
             obj.labels.append(0)
@@ -159,7 +172,6 @@ class ObjectSelector:
             obj = _Object(x, y)
             self._decode(obj)
             self.objects.append(obj)
-        self._refresh()
 
     def move(self, pos):
         pass

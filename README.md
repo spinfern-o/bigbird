@@ -88,6 +88,10 @@ The Supabase environment variables (`NEXT_PUBLIC_SUPABASE_URL`,
   DirectML when available, and fall back to the CPU. All are commercially licensed
   (Help → Open-source Licenses).
 
+**Optional NVIDIA cloud GPU (Brev)**: AI → AI Settings can send Remove Background,
+Select Subject and object selection to your own NVIDIA Brev GPU, and enables **Fill
+Removed Area**. Setup: [server/README.md](server/README.md).
+
 **Beginner help**: welcome screen, plain-English tooltips on every control,
 status-bar hints for each tool, Quick Start guide (F1), double-click a slider's name to reset.
 

@@ -5,7 +5,7 @@ import time
 from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, Signal
 from PySide6.QtWidgets import QMessageBox, QProgressDialog
 
-from . import models
+from . import cloud, models
 
 
 class _Signals(QObject):
@@ -97,7 +97,8 @@ def _download_then(parent, keys, title, then):
 
 
 def _run(parent, title, busy_text, fn, on_done):
-    dlg = QProgressDialog(busy_text + "\n(running on your " + models.device_name() + ")",
+    place = cloud.where() or ("your " + models.device_name())
+    dlg = QProgressDialog(busy_text + "\n(running on " + place + ")",
                           None, 0, 0, parent)
     dlg.setWindowTitle(title)
     dlg.setWindowModality(Qt.WindowModal)

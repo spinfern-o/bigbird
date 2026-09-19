@@ -3,7 +3,7 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (QComboBox, QFrame, QHBoxLayout, QLabel, QPushButton, QScrollArea,
                                QSpinBox, QVBoxLayout, QWidget)
 
-from . import models
+from . import cloud, models
 
 
 class _Card(QFrame):
@@ -26,6 +26,8 @@ class AIPanel(QScrollArea):
     refineOutline = Signal()
     removeObject = Signal()
     refineRemoval = Signal()
+    fillRemoved = Signal()
+    openSettings = Signal()
 
     def __init__(self):
         super().__init__()
@@ -80,9 +82,10 @@ class AIPanel(QScrollArea):
         self.obj_btn = QPushButton("Select Object(s) to Remove")
         self.obj_btn.setObjectName("accent")
         self.obj_btn.clicked.connect(self.removeObject)
-        soon = QLabel("Coming soon: fill the gap with matching background (cloud AI).")
-        soon.setWordWrap(True)
-        soon.setObjectName("hintLabel")
+        self.fill_btn = QPushButton("Fill Removed Area (cloud GPU)")
+        self.fill_btn.setToolTip("Fill the transparent gap left by removed objects with matching "
+                                 "background. Runs on your NVIDIA cloud GPU.")
+        self.fill_btn.clicked.connect(self.fillRemoved)
         row = QHBoxLayout()
         row.addWidget(QLabel("Outline points for refining"))
         self.removal_points = QSpinBox()
@@ -99,20 +102,28 @@ class AIPanel(QScrollArea):
         c.lay.addWidget(self.obj_btn)
         c.lay.addLayout(row)
         c.lay.addWidget(self.refine_removal_btn)
-        c.lay.addWidget(soon)
+        c.lay.addWidget(self.fill_btn)
         lay.addWidget(c)
 
         self.status = QLabel()
         self.status.setWordWrap(True)
         self.status.setObjectName("hintLabel")
         lay.addWidget(self.status)
+        settings = QPushButton("AI Settings… (this computer or NVIDIA cloud GPU)")
+        settings.clicked.connect(self.openSettings)
+        lay.addWidget(settings)
         lay.addStretch(1)
         self.setWidget(root)
         self.refresh()
 
     def refresh(self):
-        lines = [f"Runs on: your {models.device_name()}"]
+        if cloud.use_cloud():
+            lines = [f"Heavy AI runs on: your NVIDIA cloud GPU ({cloud.get_settings()['url']})"]
+        else:
+            lines = [f"Runs on: your {models.device_name()}"]
         for m in models.MODELS.values():
+            if m.server_only:
+                continue
             state = "✓ downloaded" if models.is_downloaded(m.key) else f"{m.size_mb} MB download"
             lines.append(f"• {m.name}: {state}")
         self.status.setText("\n".join(lines))
