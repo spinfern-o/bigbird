@@ -20,7 +20,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 # directly from app/ai.
 import select as stdlib_select  # noqa: E402
 
-from app.ai import cloud  # noqa: E402
+from app.ai import cloud, connection  # noqa: E402
 
 
 class _Resp:
@@ -67,6 +67,15 @@ def main():
     check("health endpoint requested", seen["url"].endswith("/health"))
     check("bearer token attached", seen["auth"] == "Bearer abc")
     check("health JSON decoded", health["ok"] is True)
+
+    forward = connection._Forward()
+    with patch("app.ai.connection._tunnel_cmd", return_value=None):
+        try:
+            forward.start("bigbird-gpu-dev", 8765)
+            raised = False
+        except RuntimeError as e:
+            raised = "Brev connection tools" in str(e)
+    check("missing Brev tools fail clearly", raised)
 
     rgba = np.zeros((100, 200, 4), np.uint8)
     calls = []
