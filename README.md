@@ -22,24 +22,31 @@ can be built at the same time. See **[ROADMAP.txt](ROADMAP.txt)**.
 
 ## Account sign-in
 
-PhotoForge has a **Log in** button in the top toolbar. It signs you in through a
-web page (so credentials never live in the desktop app) using the standard
-native-app loopback flow:
+PhotoForge now shows the **account screen first** every time the desktop app
+starts. Login happens in the user's default web browser (Safari, Chrome, Edge,
+etc.), so credentials never live in the desktop app:
 
-1. The app opens the sign-in page in your default browser (e.g. Safari).
-2. You sign in there (email + password, backed by Supabase).
-3. The browser hands the session back to the app on a local `127.0.0.1`
-   callback, and the button switches to show your email.
+1. Launch PhotoForge and click **Log in**.
+2. The app opens `https://www.phrame.tech/desktop-login` in the default browser.
+3. Sign in there. If you need an account, use **Create one** on that page.
+4. After creating an account, close the browser tab, return to PhotoForge, and
+   click **Log in** again.
+5. A successful login returns the session to the app through a local
+   `127.0.0.1` callback and opens the editor.
 
 The sign-in web app lives in **[`web/`](web/)** (Next.js) and is deployed
-separately on Vercel. Point the desktop app at your deployment with the
-`BIGBIRD_WEB_URL` environment variable; it defaults to `http://localhost:3000`
-for local development.
+separately on Vercel. Production defaults to `https://www.phrame.tech`.
+Set `BIGBIRD_WEB_URL=http://localhost:3000` only when testing the web app
+locally.
 
 **Deployment (Vercel):** the website is the `web/` app, not `main.py`. In the
 Vercel project set **Root Directory = `web`** and **Framework Preset = Next.js**.
 The Supabase environment variables (`NEXT_PUBLIC_SUPABASE_URL`,
 `NEXT_PUBLIC_SUPABASE_ANON_KEY`) are provided by the Supabase integration.
+This project intentionally does not use signup email verification. In Supabase
+Auth settings, **Confirm email must be disabled**; otherwise Supabase itself
+will still send confirmation mail even though the PhotoForge signup page no
+longer asks the user to verify.
 
 The same Vercel deployment also hosts the **cloud AI proxy** at `/api/edit`
 (`web/app/api/edit/route.ts`), which holds the NVIDIA key so it never ships
