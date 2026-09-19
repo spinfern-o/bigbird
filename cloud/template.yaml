@@ -1,0 +1,96 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  PhotoForge cloud AI proxy. Holds the NVIDIA API key in Secrets Manager so it
+  never ships inside the desktop app, and only serves callers with a valid
+  PhotoForge (Supabase) sign-in.
+
+Parameters:
+  SupabaseUrl:
+    Type: String
+    Description: Your Supabase project URL, e.g. https://abcdefgh.supabase.co
+  NimEndpoint:
+    Type: String
+    Description: >
+      Full NVIDIA NIM invoke URL for the image-edit model you are using.
+      Confirm the current path on build.nvidia.com -- NIM model paths change.
+  DailyQuota:
+    Type: Number
+    Default: 25
+    Description: Cloud edits allowed per signed-in user per day.
+
+Resources:
+  # The key itself is NEVER in this template. CloudFormation creates an empty
+  # secret; you put the value in afterwards with `aws secretsmanager
+  # put-secret-value` (see cloud/README.md). Anything written here would end up
+  # in CloudFormation's stack history in plaintext.
+  NvidiaApiKey:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: photoforge/nvidia-api-key
+      Description: NVIDIA NIM API key used by the PhotoForge cloud AI proxy.
+
+  QuotaTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: photoforge-cloud-quota
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: user_id
+          AttributeType: S
+        - AttributeName: day
+          AttributeType: S
+      KeySchema:
+        - AttributeName: user_id
+          KeyType: HASH
+        - AttributeName: day
+          KeyType: RANGE
+      # Old counters delete themselves; nothing to clean up and nothing to pay
+      # to store.
+      TimeToLiveSpecification:
+        AttributeName: expires_at
+        Enabled: true
+
+  ProxyFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: photoforge-cloud-proxy
+      CodeUri: proxy/
+      Handler: handler.lambda_handler
+      Runtime: python3.12
+      Architectures: [arm64]
+      MemorySize: 512
+      # Image generation is slow; must exceed the handler's NIM_TIMEOUT.
+      Timeout: 130
+      Environment:
+        Variables:
+          SUPABASE_URL: !Ref SupabaseUrl
+          NVIDIA_SECRET_ARN: !Ref NvidiaApiKey
+          NIM_ENDPOINT: !Ref NimEndpoint
+          QUOTA_TABLE: !Ref QuotaTable
+          DAILY_QUOTA: !Ref DailyQuota
+      Policies:
+        # Least privilege: this function can read exactly one secret. It cannot
+        # list secrets, read any other secret, or write this one.
+        - Statement:
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !Ref NvidiaApiKey
+        - Statement:
+            - Effect: Allow
+              Action: dynamodb:UpdateItem
+              Resource: !GetAtt QuotaTable.Arn
+      Events:
+        Edit:
+          Type: HttpApi
+          Properties:
+            Path: /v1/edit
+            Method: POST
+
+Outputs:
+  ApiEndpoint:
+    Description: Set this as PHOTOFORGE_CLOUD_URL in the desktop app.
+    Value: !Sub "https://${ServerlessHttpApi}.execute-api.${AWS::Region}.amazonaws.com/v1/edit"
+  SecretArn:
+    Description: Put the NVIDIA key here (see cloud/README.md).
+    Value: !Ref NvidiaApiKey
