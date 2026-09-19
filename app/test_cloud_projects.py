@@ -60,7 +60,7 @@ def main():
             calls.append((method, url, data, headers or {}))
             if "/rest/v1/projects" in url and method in ("POST", "PATCH"):
                 row = json.loads(data)
-                return json.dumps([{"id": PROJECT_ID, **row}]).encode()
+                return json.dumps([{**row, "id": PROJECT_ID}]).encode()
             if "/rest/v1/projects" in url and method == "GET":
                 return b"[]"
             return b"{}"
