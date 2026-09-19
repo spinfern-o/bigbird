@@ -26,7 +26,7 @@ def main():
     if login.exec() != QDialog.Accepted:
         return
 
-    win = MainWindow()
+    win = MainWindow(auth=auth)
     win.show()
     if len(sys.argv) > 1:
         win.load_path(sys.argv[1])
