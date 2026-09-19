@@ -423,6 +423,8 @@ class MainWindow(SelectionActions, QMainWindow):
         ap.presetChosen.connect(self._preset_chosen)
         ap.autoRequested.connect(self.auto_enhance)
         ap.resetRequested.connect(self.reset_adjustments)
+        ap.mixerResetRequested.connect(self.reset_color_mixer)
+        ap.hint.connect(self.hint_lbl.setText)
         lp = self.layers_panel.actions
         lp["new"].clicked.connect(self.a_layer_new.trigger)
         lp["dup"].clicked.connect(self.a_layer_dup.trigger)
@@ -623,7 +625,7 @@ class MainWindow(SelectionActions, QMainWindow):
 
     # ================================================================== adjustments
     def _setting_changed(self, key, value):
-        self.doc.push_undo(f"{key.title()} adjustment", coalesce="adj:" + key)
+        self.doc.push_undo(f"{adjustments.setting_label(key)} adjustment", coalesce="adj:" + key)
         self.doc.adjust[key] = value
         self.renderer.request_update()
 
@@ -644,6 +646,15 @@ class MainWindow(SelectionActions, QMainWindow):
     def reset_adjustments(self):
         if self.doc and not adjustments.is_default(self.doc.adjust):
             self.doc.set_adjustments(adjustments.DEFAULTS, "Reset adjustments")
+
+    def reset_color_mixer(self):
+        """Put every Color Mixer slider back to zero in a single undo step."""
+        if self.doc and not adjustments.mixer_is_default(self.doc.adjust):
+            s = dict(self.doc.adjust)
+            s.update(adjustments.MIXER_DEFAULTS)
+            self.doc.set_adjustments(s, "Reset Color Mixer")
+            self.hint_lbl.setText("Color Mixer reset — your other sliders are untouched. "
+                                  "Ctrl+Z to undo.")
 
     def toggle_compare(self, on):
         self.renderer.show_original = on
@@ -860,7 +871,7 @@ class MainWindow(SelectionActions, QMainWindow):
         self.a_ai_refine_rm = A("Refine Removal…", self.ai_refine_removal, None,
                                 "Adjust what was removed with draggable dots")
         self.a_ai_settings = A("AI Settings…", self.ai_settings, None,
-                               "Run heavy AI on this computer or your NVIDIA cloud GPU")
+                               "Optionally accelerate local AI on the Brev NVIDIA GPU")
         self.cloud_conn = CloudConnection(self)
         self.cloud_conn.changed.connect(self._cloud_changed)
         self.cloud_lbl = QPushButton()
@@ -869,7 +880,7 @@ class MainWindow(SelectionActions, QMainWindow):
         self.cloud_lbl.clicked.connect(self.ai_settings)
         self.statusBar().addPermanentWidget(self.cloud_lbl)
         self._cloud_changed(self.cloud_conn.state, self.cloud_conn.message)
-        QTimer.singleShot(400, self.cloud_conn.start)   # auto-connect if the GPU is on
+        QTimer.singleShot(400, self.cloud_conn.start)
         for a in (self.a_ai_bg, self.a_ai_refine, self.a_ai_obj, self.a_ai_refine_rm):
             self.ai_menu.addAction(a)
             self.doc_actions.append(a)
