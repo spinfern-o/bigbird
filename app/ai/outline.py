@@ -94,6 +94,11 @@ class OutlineEditor:
         self._history = []
         self._drag_moved = False
         self.on_change = None
+        # Refine mode: the mask the dots were traced from. Changing the number of points
+        # re-traces this mask, so detail is never lost by going to fewer and back to more.
+        self.ref = None
+        self.tol = 1.0       # how far traced dots may stray from the reference edge
+        self.edited = False  # user moved/added/deleted dots since the last trace
         self.item = OutlineItem(self)
         canvas.scene().addItem(self.item)
 
@@ -108,14 +113,19 @@ class OutlineEditor:
         return sum(len(p) for p in self.polys) + len(self.open)
 
     def _save(self):
-        self._history.append(([list(map(list, p)) for p in self.polys], [list(v) for v in self.open]))
+        self._history.append(([list(map(list, p)) for p in self.polys], [list(v) for v in self.open],
+                              self.ref, self.tol, self.edited))
         del self._history[:-100]
+
+    def _edit(self):
+        """Record the state before a user edit (dragging, adding or deleting a dot)."""
+        self._save()
+        self.edited = True
 
     def undo(self):
         if not self._history:
             return False
-        polys, self.open = self._history.pop()
-        self.polys = polys
+        self.polys, self.open, self.ref, self.tol, self.edited = self._history.pop()
         self._changed()
         return True
 
@@ -136,8 +146,39 @@ class OutlineEditor:
         self.polys, self.open = [], []
         self._changed()
 
+    def load_mask(self, mask, points):
+        """Start refining: trace `mask` with about `points` dots."""
+        self.ref = mask
+        self.edited = False
+        self.set_point_count(points)
+        self._history.clear()
+
+    def set_point_count(self, points):
+        """Re-trace the reference with about `points` dots, keeping the user's edits."""
+        if self.ref is None:
+            return
+        ref = self.ref
+        if self.edited:  # fold the user's changes into the reference first
+            ref = merge_refined(ref, self.rasterize(), self.tol)
+        polys, tol = trace_mask(ref, points=points)
+        if not polys:
+            return
+        self._save()
+        self.ref, self.tol, self.edited = ref, tol, False
+        self.polys, self.open = polys, []
+        self._changed()
+
+    def result_mask(self, feather=0.0, base=None):
+        """The final mask: the reference edge where untouched, the dots where edited."""
+        ref = self.ref if base is None else base
+        return merge_refined(ref, self.rasterize(feather), self.tol)
+
     def more_points(self):
-        """Insert a dot halfway along every line so the outline can follow curves."""
+        """Double the dots. Traced outlines re-trace the true edge; hand-drawn ones get a dot
+        halfway along every line."""
+        if self.ref is not None:
+            self.set_point_count(self.point_count() * 2)
+            return
         self._save()
         out = []
         for poly in self.polys:
@@ -150,6 +191,9 @@ class OutlineEditor:
         self._changed()
 
     def fewer_points(self):
+        if self.ref is not None:
+            self.set_point_count(max(8, self.point_count() // 2))
+            return
         self._save()
         self.polys = [p[::2] if len(p) >= 8 else p for p in self.polys]
         self._changed()
@@ -202,7 +246,7 @@ class OutlineEditor:
             if i == len(self.polys) and j == 0 and len(self.open) >= 3:
                 self._close_open()
                 return
-            self._save()
+            self._edit()
             self.drag = hit
             self._drag_moved = False
             return
@@ -210,7 +254,7 @@ class OutlineEditor:
             edge = self._edge_at(p)
             if edge:
                 i, j, proj = edge
-                self._save()
+                self._edit()
                 self.polys[i].insert(j, [float(proj[0]), float(proj[1])])
                 self.drag = (i, j)
                 self._changed()
@@ -235,7 +279,8 @@ class OutlineEditor:
     def release(self):
         if self.drag:
             if not self._drag_moved and self._history:
-                self._history.pop()  # a click without dragging isn't a change
+                # a click without dragging isn't a change
+                *_, self.edited = self._history.pop()
             self.drag = None
             self._changed()
 
@@ -262,7 +307,7 @@ class OutlineEditor:
         self._changed()
 
     def _delete_vertex(self, i, j):
-        self._save()
+        self._edit()
         target = self._all()[i]
         del target[j]
         if i < len(self.polys) and len(target) < 3:
@@ -292,23 +337,41 @@ class OutlineEditor:
         return mask
 
 
-def trace_mask(mask, max_shapes=12):
-    """Turn a mask into editable polygons (outer outlines and holes).
-    Returns (polygons, tolerance): how far the dots may stray from the true edge."""
+def _contours(mask, max_shapes=12):
     h, w = mask.shape
     binary = (mask > 127).astype(np.uint8)
     contours, _ = cv2.findContours(binary, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_NONE)
     min_area = 0.0005 * h * w
-    contours = sorted((c for c in contours if cv2.contourArea(c) >= min_area),
-                      key=cv2.contourArea, reverse=True)[:max_shapes]
-    polys, tol = [], 1.0
+    return sorted((c for c in contours if cv2.contourArea(c) >= min_area),
+                  key=cv2.contourArea, reverse=True)[:max_shapes]
+
+
+def _approx(contours, eps):
+    polys = []
     for c in contours:
-        eps = max(1.0, 0.0018 * cv2.arcLength(c, True))
-        approx = cv2.approxPolyDP(c, eps, True).reshape(-1, 2)
-        if len(approx) >= 3:
-            polys.append([[float(x) + 0.5, float(y) + 0.5] for x, y in approx])
-            tol = max(tol, eps)
-    return polys, tol
+        a = cv2.approxPolyDP(c, eps, True).reshape(-1, 2)
+        if len(a) >= 3:
+            polys.append([[float(x) + 0.5, float(y) + 0.5] for x, y in a])
+    return polys
+
+
+def trace_mask(mask, points=150):
+    """Turn a mask into editable polygons (outer outlines and holes) with about `points`
+    dots in total, spread so each dot is equally close to the true edge.
+    Returns (polygons, tolerance): how far the dots may stray from the true edge."""
+    contours = _contours(mask)
+    if not contours:
+        return [], 1.0
+    # Binary-search the simplification tolerance that gives the requested number of dots.
+    lo, hi = 0.3, max(cv2.arcLength(c, True) for c in contours) / 4
+    for _ in range(30):
+        mid = (lo * hi) ** 0.5
+        if sum(len(p) for p in _approx(contours, mid)) > points:
+            lo = mid
+        else:
+            hi = mid
+    polys = _approx(contours, hi)
+    return polys, max(1.0, hi)
 
 
 def merge_refined(orig_alpha, outline_mask, tol):

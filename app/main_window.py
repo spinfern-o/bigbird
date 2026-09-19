@@ -6,7 +6,7 @@ from PySide6.QtCore import QSize, Qt, QThreadPool, QTimer
 from PySide6.QtGui import QAction, QActionGroup, QColor, QImage, QKeySequence, QPainter, QShortcut
 from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDialog, QDockWidget, QFileDialog, QHBoxLayout,
                                QInputDialog, QLabel, QMainWindow, QMessageBox, QPushButton,
-                               QSizePolicy, QSlider, QStackedWidget, QTabWidget, QToolBar, QVBoxLayout, QWidget)
+                               QSizePolicy, QSlider, QSpinBox, QStackedWidget, QTabWidget, QToolBar, QVBoxLayout, QWidget)
 
 from . import adjustments, filters, imageio
 from .canvas import Canvas, ToolState
@@ -16,7 +16,7 @@ from .icons import tool_icon
 from .panels import AdjustPanel, ColorButton, LayersPanel, NoWheelSlider
 from .renderer import Renderer
 from .ai import models as ai_models, tasks as ai_tasks
-from .ai.outline import OutlineEditor, merge_refined, trace_mask
+from .ai.outline import OutlineEditor, trace_mask
 from .ai.panel import AIPanel
 from .ai.runner import run_ai
 
@@ -829,6 +829,17 @@ class MainWindow(QMainWindow):
             b.setToolTip(tip)
             b.clicked.connect(lambda _=False, m=method: self._outline_call(m))
             lay.addWidget(b)
+        self.points_lbl = QLabel("Points")
+        self.points_spin = QSpinBox()
+        self.points_spin.setRange(8, 5000)
+        self.points_spin.setSingleStep(25)
+        self.points_spin.setKeyboardTracking(False)
+        self.points_spin.setToolTip("How many dots to use for the outline. More dots follow the "
+                                    "edge more closely; fewer are quicker to adjust.\n"
+                                    "Changing this re-traces the original edge, so no detail is lost.")
+        self.points_spin.valueChanged.connect(self._points_changed)
+        lay.addWidget(self.points_lbl)
+        lay.addWidget(self.points_spin)
         self.crisp_chk = QCheckBox("Crisp edges")
         self.crisp_chk.setToolTip("Make the AI's soft edges solid everywhere, e.g. if a hand "
                                   "or object looks faded. Leave off for hair and fur.")
@@ -869,6 +880,8 @@ class MainWindow(QMainWindow):
         self.feather.setVisible(refine)
         self.feather_lbl.setVisible(refine)
         self.crisp_chk.setVisible(refine)
+        self.points_lbl.setVisible(refine)
+        self.points_spin.setVisible(refine)
         self.canvas.setFocus()
         self._outline_changed()
         return ed
@@ -891,6 +904,14 @@ class MainWindow(QMainWindow):
             msg = f"{n} dots. Drag to adjust, click a line to add a dot, right-click to delete"
         self.outline_info.setText(msg)
         self.outline_apply_btn.setEnabled(ed.has_shape())
+        self.points_spin.blockSignals(True)
+        self.points_spin.setValue(n)
+        self.points_spin.blockSignals(False)
+
+    def _points_changed(self, n):
+        if self.canvas.outline is not None:
+            self.canvas.outline.set_point_count(n)
+            self.canvas.setFocus()
 
     def _outline_apply(self):
         ed = self.canvas.outline
@@ -902,11 +923,8 @@ class MainWindow(QMainWindow):
         else:
             layer = self.doc.active_layer()
             px = layer.pixels.copy()
-            base = self._refine_alpha
-            if self.crisp_chk.isChecked():
-                base = ai_tasks.crisp_edges(base)
-            px[..., 3] = merge_refined(base, ed.rasterize(self.feather.value()),
-                                       self._refine_tol)
+            base = ai_tasks.crisp_edges(ed.ref) if self.crisp_chk.isChecked() else None
+            px[..., 3] = ed.result_mask(self.feather.value(), base)
             self.doc.set_layer_pixels(px, "Refine outline")
             self.select_tool("hand")
             self.hint_lbl.setText("Outline applied. Ctrl+Z to undo.")
@@ -941,8 +959,7 @@ class MainWindow(QMainWindow):
                 "The selected layer has no transparent areas to refine.\n\n"
                 "Use Remove Background first, then select the Cutout layer.")
             return
-        polys, self._refine_tol = trace_mask(alpha)
-        self._refine_alpha = alpha
+        polys, _ = trace_mask(alpha)
         if not polys:
             QMessageBox.information(self, "Refine Outline", "This layer is almost empty.")
             return
@@ -953,8 +970,7 @@ class MainWindow(QMainWindow):
         full[..., 3] = 255
         self.canvas.set_backdrop(imageio.to_qimage(full))
         self.crisp_chk.setChecked(self.ai_panel.edges.currentData() == "crisp")
-        ed.set_polys(polys)
-        ed._history.clear()
+        ed.load_mask(alpha, self.ai_panel.points.value())
         self._outline_changed()
 
     def _ai_remove_object(self, mask):

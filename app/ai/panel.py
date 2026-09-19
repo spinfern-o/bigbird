@@ -1,7 +1,7 @@
 """The "AI" tab in the right-hand panel."""
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import (QComboBox, QFrame, QLabel, QPushButton, QScrollArea, QVBoxLayout,
-                               QWidget)
+from PySide6.QtWidgets import (QComboBox, QFrame, QHBoxLayout, QLabel, QPushButton, QScrollArea,
+                               QSpinBox, QVBoxLayout, QWidget)
 
 from . import models
 
@@ -56,8 +56,19 @@ class AIPanel(QScrollArea):
         self.edges.addItem("Edges: Crisp (best for hands and objects)", "crisp")
         self.edges.setToolTip("Natural keeps soft, see-through edges like wisps of hair.\n"
                               "Crisp makes edges solid, so hands and objects don't look faded.")
+        row = QHBoxLayout()
+        row.addWidget(QLabel("Outline points for refining"))
+        self.points = QSpinBox()
+        self.points.setRange(8, 5000)
+        self.points.setSingleStep(25)
+        self.points.setValue(150)
+        self.points.setToolTip("How many dots Refine Outline starts with. More dots follow the "
+                               "edge closely; fewer are quicker to adjust. You can also change "
+                               "it while refining.")
+        row.addWidget(self.points)
         c.lay.addWidget(self.edges)
         c.lay.addWidget(self.bg_btn)
+        c.lay.addLayout(row)
         c.lay.addWidget(self.refine_btn)
         lay.addWidget(c)
 
