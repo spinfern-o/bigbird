@@ -859,8 +859,6 @@ class MainWindow(SelectionActions, QMainWindow):
                           None, "AI: click objects to select them, then remove them")
         self.a_ai_refine_rm = A("Refine Removal…", self.ai_refine_removal, None,
                                 "Adjust what was removed with draggable dots")
-        self.a_ai_fill = A("Fill Removed Area (cloud GPU)", self.ai_fill_removed, None,
-                           "Fill the gap left by removed objects on your NVIDIA cloud GPU")
         self.a_ai_settings = A("AI Settings…", self.ai_settings, None,
                                "Run heavy AI on this computer or your NVIDIA cloud GPU")
         self.cloud_conn = CloudConnection(self)
@@ -872,8 +870,7 @@ class MainWindow(SelectionActions, QMainWindow):
         self.statusBar().addPermanentWidget(self.cloud_lbl)
         self._cloud_changed(self.cloud_conn.state, self.cloud_conn.message)
         QTimer.singleShot(400, self.cloud_conn.start)   # auto-connect if the GPU is on
-        for a in (self.a_ai_bg, self.a_ai_refine, self.a_ai_obj, self.a_ai_refine_rm,
-                  self.a_ai_fill):
+        for a in (self.a_ai_bg, self.a_ai_refine, self.a_ai_obj, self.a_ai_refine_rm):
             self.ai_menu.addAction(a)
             self.doc_actions.append(a)
             a.setEnabled(self.doc is not None)
@@ -884,7 +881,6 @@ class MainWindow(SelectionActions, QMainWindow):
         p.refineOutline.connect(self.ai_refine_outline)
         p.removeObject.connect(lambda: self.select_tool("ai_remove"))
         p.refineRemoval.connect(self.ai_refine_removal)
-        p.fillRemoved.connect(self.ai_fill_removed)
         p.openSettings.connect(self.ai_settings)
         self.canvas.outlineApply.connect(self._outline_apply)
         self.canvas.outlineCancel.connect(self._outline_cancel)
@@ -1143,21 +1139,6 @@ class MainWindow(SelectionActions, QMainWindow):
             self.canvas.outline.smaller_part()
             self.canvas.setFocus()
 
-    def _removal_layer(self):
-        """(index, removed mask) of the active or topmost "Objects removed" layer, or None."""
-        layers = self.doc.layers
-        index = self.doc.active
-        if layers[index].source is None:
-            index = next((i for i in range(len(layers) - 1, -1, -1)
-                          if layers[i].source is not None), None)
-        if index is None:
-            return None
-        layer = layers[index]
-        src_a = layer.source[..., 3].astype(np.float32)
-        cur_a = layer.pixels[..., 3].astype(np.float32)
-        removed = np.where(src_a > 0, 255 - cur_a * 255 / np.maximum(src_a, 1), 0)
-        return index, np.clip(removed + 0.5, 0, 255).astype(np.uint8)
-
     def ai_settings(self):
         AISettingsDialog(self, self.cloud_conn).exec()
         self.ai_panel.refresh()
@@ -1170,49 +1151,6 @@ class MainWindow(SelectionActions, QMainWindow):
         self.ai_panel.refresh()
         if state in ("connected", "offline", "connecting"):
             self.hint_lbl.setText(message)
-
-    def ai_fill_removed(self):
-        """Fill the transparent gap left by Remove Objects, on the cloud GPU."""
-        if not self.doc:
-            return
-        found = self._removal_layer()
-        if found is None or not (found[1] > 127).any():
-            QMessageBox.information(self, "Fill Removed Area",
-                                    "Remove some objects first (Select Object(s) to Remove).")
-            return
-        if not ai_cloud.use_cloud():
-            if ai_cloud.prefers_cloud():
-                r = QMessageBox.question(
-                    self, "Fill Removed Area",
-                    "Filling runs on your NVIDIA cloud GPU, which isn't connected right now:\n"
-                    f"{self.cloud_conn.message}\n\nStart the GPU in Brev if needed, then click "
-                    "Yes to try connecting again.")
-                if r == QMessageBox.Yes:
-                    self.cloud_conn.retry()
-            else:
-                r = QMessageBox.question(
-                    self, "Fill Removed Area",
-                    "Filling runs on your NVIDIA cloud GPU (Brev), which isn't set up yet.\n\n"
-                    "Open AI Settings now?")
-                if r == QMessageBox.Yes:
-                    self.ai_settings()
-            return
-        index, removed = found
-        layer = self.doc.layers[index]
-        src = layer.source
-        rgb = np.ascontiguousarray(src[..., :3])
-
-        def done(result):
-            filled, blend = result
-            w = (blend.astype(np.float32) / 255.0)[..., None]
-            px = layer.pixels.copy()
-            px[..., :3] = np.clip(rgb * (1 - w) + filled * w + 0.5, 0, 255).astype(np.uint8)
-            px[..., 3] = src[..., 3]
-            self.doc.set_layer_pixels(px, "Fill removed area", index=index)
-            self.hint_lbl.setText("Filled on the cloud GPU. Ctrl+Z to undo.")
-
-        run_ai(self, [], "Fill Removed Area", "Filling in the background…",
-               lambda: ai_cloud.Client().fill(rgb, removed), done)
 
     def ai_refine_removal(self):
         """Re-open the removal outline of an "Objects removed" layer."""
