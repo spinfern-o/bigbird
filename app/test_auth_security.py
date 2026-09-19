@@ -68,6 +68,16 @@ def main():
         check("matching callback state succeeds", ok)
         check("successful callback persists session", auth._SESSION_PATH.exists())
 
+        auth._secure_write_json(auth._SESSION_PATH, {
+            "access_token": "expired-access",
+            "refresh_token": "expired-refresh",
+            "expires_at": "1",
+            "email": "old@example.com",
+        })
+        expired = auth.AuthManager()
+        check("expired saved session is rejected", not expired.is_logged_in)
+        check("expired saved session file is removed", not auth._SESSION_PATH.exists())
+
     auth._SESSION_PATH = original_path
     print("All auth-security regression tests passed.")
 
