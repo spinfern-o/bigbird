@@ -1,11 +1,11 @@
 "use client"
 
 import { createClient } from "@/lib/supabase/client"
-import Link from "next/link"
 import { useState } from "react"
 
 function signUpErrorMessage(error: unknown): string {
-  const { code, status, message } = (error ?? {}) as { code?: string; status?: number; message?: string }
+  const { code, message } = (error ?? {}) as { code?: string; message?: string }
+
   if (
     code === "email_address_invalid" ||
     code === "email_address_not_authorized" ||
@@ -18,9 +18,6 @@ function signUpErrorMessage(error: unknown): string {
   }
   if (code === "user_already_exists" || code === "email_exists") {
     return "An account with this email may already exist. Try signing in instead."
-  }
-  if (code === "over_email_send_rate_limit" || status === 429) {
-    return "Too many attempts. Please wait a moment and try again."
   }
   return "Something went wrong. Please try again."
 }
@@ -38,14 +35,7 @@ export default function SignUpPage() {
 
     try {
       const supabase = createClient()
-      const { error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          emailRedirectTo:
-            process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL ?? `${window.location.origin}/desktop-login`,
-        },
-      })
+      const { error } = await supabase.auth.signUp({ email, password })
       if (error) throw error
       setStatus("done")
     } catch (err: unknown) {
@@ -70,17 +60,11 @@ export default function SignUpPage() {
 
         {status === "done" ? (
           <div className="rounded-lg border border-border bg-panel p-6 text-center">
-            <h2 className="text-base font-medium">Check your email</h2>
+            <h2 className="text-base font-medium">You are signed up</h2>
             <p className="mt-2 text-sm leading-relaxed text-muted">
-              We sent a confirmation link to <span className="text-foreground">{email}</span>. Confirm your address,
-              then sign in from the PhotoForge desktop app.
+              Your PhotoForge account was created for <span className="text-foreground">{email}</span>.
+              Close this page, return to the PhotoForge desktop app, and press Log in.
             </p>
-            <Link
-              href="/desktop-login"
-              className="mt-6 inline-flex h-10 w-full items-center justify-center rounded-md border border-border-strong px-4 text-sm font-medium text-foreground transition-colors hover:bg-panel-raised"
-            >
-              Go to sign in
-            </Link>
           </div>
         ) : (
           <div className="rounded-lg border border-border bg-panel p-6">
@@ -130,13 +114,6 @@ export default function SignUpPage() {
                 {status === "loading" ? "Creating account…" : "Create account"}
               </button>
             </form>
-
-            <p className="mt-4 text-center text-sm text-muted">
-              Already have an account?{" "}
-              <Link href="/desktop-login" className="text-accent underline-offset-4 hover:underline">
-                Sign in
-              </Link>
-            </p>
           </div>
         )}
       </div>
