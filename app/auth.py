@@ -30,7 +30,7 @@ from PySide6.QtCore import QObject, QUrl, Signal
 
 # Where the account web page is hosted. Override in production, e.g.
 #   export BIGBIRD_WEB_URL="https://your-app.vercel.app"
-DEFAULT_WEB_URL = "http://localhost:3000"
+DEFAULT_WEB_URL = "https://phrame.tech"
 
 # Abandon a pending sign-in if the browser never comes back.
 LOGIN_TIMEOUT_SECONDS = 300
@@ -100,6 +100,18 @@ class AuthManager(QObject):
     @property
     def email(self) -> str | None:
         return (self._session or {}).get("email")
+
+    @property
+    def session(self) -> dict:
+        return dict(self._session or {})
+
+    def update_session(self, **fields):
+        """Store a refreshed token (used by the cloud projects API)."""
+        if self._session is None:
+            return
+        self._session.update({k: v for k, v in fields.items() if v})
+        self._session["saved_at"] = int(time.time())
+        self._save()
 
     def _load_saved(self):
         try:
