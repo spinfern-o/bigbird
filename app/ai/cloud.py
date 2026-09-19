@@ -31,7 +31,13 @@ def get_settings():
     return {"mode": s.value("ai/mode", "local"),
             "url": s.value("ai/url", "http://localhost:8765"),
             "token": s.value("ai/token", ""),
-            "instance": s.value("ai/brev_instance", "")}
+            "instance": s.value("ai/brev_instance", ""),
+            "autostart": s.value("ai/autostart", "false") in (True, "true"),
+            "autostop": s.value("ai/autostop", "false") in (True, "true")}
+
+
+def set_value(key, value):
+    _settings().setValue(key, value)
 
 
 def save_settings(mode, url, token, instance):

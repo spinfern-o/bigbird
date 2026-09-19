@@ -8,7 +8,7 @@ cd "$(dirname "$0")/.."
 if ! python3 -m venv --help >/dev/null 2>&1 || ! python3 -c "import ensurepip" 2>/dev/null; then
     PYV="$(python3 -c 'import sys; print(f"{sys.version_info[0]}.{sys.version_info[1]}")')"
     echo "Installing python${PYV}-venv (needs sudo)..."
-    sudo apt-get update -qq && sudo apt-get install -y -qq "python${PYV}-venv" python3-venv
+    sudo -n apt-get update -qq && sudo -n apt-get install -y -qq "python${PYV}-venv" python3-venv         || { echo "ERROR: couldn't install python${PYV}-venv (sudo needs a password?)"; exit 1; }
 fi
 [ -x .venv-server/bin/pip ] || { rm -rf .venv-server; python3 -m venv .venv-server; }
 .venv-server/bin/python -m pip install --upgrade pip

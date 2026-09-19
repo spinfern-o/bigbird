@@ -33,10 +33,11 @@ try:  # pip-installed CUDA/cuDNN libraries (onnxruntime-gpu[cuda,cudnn]) must be
 except Exception:
     pass
 
-from app.ai import models, tasks  # noqa: E402
+from app.ai import models, server_files, tasks  # noqa: E402
 
 MAX_BODY = 200 * 1024 * 1024
 TOKEN = os.environ.get("PHOTOFORGE_TOKEN", "")
+VERSION = server_files.version()   # the desktop app compares this to decide on updates
 _sam_sessions = OrderedDict()   # session id -> SamImage (image analysed once, many clicks)
 _sam_lock = threading.Lock()
 MAX_SAM_SESSIONS = 8
@@ -58,7 +59,8 @@ def _load(body):
 def ep_health(_):
     import onnxruntime as ort
     gpu = models.device_name()
-    return {"ok": True, "device": gpu, "providers": ort.get_available_providers(),
+    return {"ok": True, "device": gpu, "version": VERSION,
+            "providers": ort.get_available_providers(),
             "models": {k: models.is_downloaded(k) for k in models.MODELS}}
 
 

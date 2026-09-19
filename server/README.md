@@ -9,6 +9,26 @@ stays on your PC.
 PhotoForge (your PC) ──localhost:8765──▶ brev port-forward ──▶ Brev GPU: server/photoforge_server.py
 ```
 
+## Automatic setup (recommended)
+
+You only need to:
+1. Create a GPU instance at [brev.nvidia.com](https://brev.nvidia.com) (any NVIDIA GPU).
+2. On your PC, install the Brev CLI (on Windows, inside Ubuntu/WSL) and run `brev login` once.
+3. In PhotoForge choose **AI → AI Settings… → My NVIDIA cloud GPU (Brev)** and click **Save**
+   (or **Start GPU**).
+
+PhotoForge then does everything else by itself:
+- finds your instance and creates the access token
+- copies this server to the GPU over SSH, installs it (about 5 minutes the first time) and
+  makes it start at boot
+- keeps it updated whenever PhotoForge's AI code changes
+- connects automatically whenever you open the app and the GPU is on
+
+Optional checkboxes in AI Settings start the GPU when PhotoForge opens and stop it when
+PhotoForge closes.
+
+The manual steps below are only for reference or troubleshooting.
+
 The server listens only on `127.0.0.1` of the GPU machine and requires an access token.
 It's reachable only through `brev port-forward` (an authenticated tunnel), never directly
 from the internet.

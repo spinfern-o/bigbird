@@ -19,8 +19,8 @@ printf 'PHOTOFORGE_TOKEN=%s\n' "$PHOTOFORGE_TOKEN" > "$ENV_FILE"
 pkill -f "server.photoforge_server" 2>/dev/null || true
 sleep 1
 
-if command -v systemctl >/dev/null && [ -d /run/systemd/system ]; then
-    sudo tee /etc/systemd/system/photoforge.service >/dev/null <<EOF
+if command -v systemctl >/dev/null && [ -d /run/systemd/system ] && sudo -n true 2>/dev/null; then
+    sudo -n tee /etc/systemd/system/photoforge.service >/dev/null <<EOF
 [Unit]
 Description=PhotoForge GPU server
 After=network-online.target
@@ -36,10 +36,11 @@ RestartSec=3
 [Install]
 WantedBy=multi-user.target
 EOF
-    sudo systemctl daemon-reload
-    sudo systemctl enable --now photoforge.service
+    sudo -n systemctl daemon-reload
+    sudo -n systemctl enable photoforge.service
+    sudo -n systemctl restart photoforge.service
     sleep 4
-    sudo systemctl --no-pager --lines=3 status photoforge.service || true
+    sudo -n systemctl --no-pager --lines=3 status photoforge.service || true
     echo
     echo "Installed. The server now starts by itself every time this machine boots."
     echo "Logs:    journalctl -u photoforge -f"

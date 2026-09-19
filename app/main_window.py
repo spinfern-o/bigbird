@@ -1168,7 +1168,7 @@ class MainWindow(SelectionActions, QMainWindow):
         self.cloud_lbl.setText(text)
         self.cloud_lbl.setToolTip(message + "\nClick for AI Settings.")
         self.ai_panel.refresh()
-        if state in ("connected", "offline"):
+        if state in ("connected", "offline", "connecting"):
             self.hint_lbl.setText(message)
 
     def ai_fill_removed(self):
@@ -1330,6 +1330,11 @@ use <b>Export</b> to save a finished copy, or <b>Save Project</b> to keep workin
 
     def closeEvent(self, e):
         if self._confirm_discard():
+            if ai_cloud.prefers_cloud() and ai_cloud.get_settings()["autostop"]:
+                self.hide()
+                QApplication.setOverrideCursor(Qt.WaitCursor)
+                self.cloud_conn.stop_gpu(wait=True)   # stop hourly billing
+                QApplication.restoreOverrideCursor()
             self.cloud_conn.stop()
             QThreadPool.globalInstance().waitForDone(5000)
             e.accept()
