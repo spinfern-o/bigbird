@@ -20,6 +20,27 @@ Planned work is split into two parallel tracks, **Track A: Selections & AI** and
 **Track B: Pro Editing & Lightroom Features**, with file-ownership rules so both
 can be built at the same time. See **[ROADMAP.txt](ROADMAP.txt)**.
 
+## Account sign-in
+
+PhotoForge has a **Log in** button in the top toolbar. It signs you in through a
+web page (so credentials never live in the desktop app) using the standard
+native-app loopback flow:
+
+1. The app opens the sign-in page in your default browser (e.g. Safari).
+2. You sign in there (email + password, backed by Supabase).
+3. The browser hands the session back to the app on a local `127.0.0.1`
+   callback, and the button switches to show your email.
+
+The sign-in web app lives in **[`web/`](web/)** (Next.js) and is deployed
+separately on Vercel. Point the desktop app at your deployment with the
+`BIGBIRD_WEB_URL` environment variable; it defaults to `http://localhost:3000`
+for local development.
+
+**Deployment (Vercel):** the website is the `web/` app, not `main.py`. In the
+Vercel project set **Root Directory = `web`** and **Framework Preset = Next.js**.
+The Supabase environment variables (`NEXT_PUBLIC_SUPABASE_URL`,
+`NEXT_PUBLIC_SUPABASE_ANON_KEY`) are provided by the Supabase integration.
+
 ## Features
 
 **Develop (Lightroom-like, non-destructive)**

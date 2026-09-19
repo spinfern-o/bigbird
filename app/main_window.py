@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDialog, QDoc
                                QSizePolicy, QSlider, QSpinBox, QStackedWidget, QTabWidget, QToolBar, QVBoxLayout, QWidget)
 
 from . import adjustments, filters, imageio
+from .auth import AuthManager
 from .canvas import Canvas, ToolState
 from .dialogs import ExportDialog, NewImageDialog, ResizeDialog, TextDialog
 from .document import Document
@@ -130,6 +131,9 @@ class MainWindow(QMainWindow):
 
         self._thumb_timer = QTimer(self, singleShot=True, interval=400)
         self._thumb_timer.timeout.connect(self._update_preset_thumbs)
+
+        self.auth = AuthManager(self)
+        self.auth.authChanged.connect(self._update_auth_ui)
 
         self._build_actions()
         self._build_menus()
@@ -269,7 +273,16 @@ class MainWindow(QMainWindow):
         for a in (self.a_open, self.a_export, None, self.a_undo, self.a_redo, None,
                   self.a_zout, self.a_fit, self.a_zin, None, self.a_compare, self.a_auto):
             top.addSeparator() if a is None else top.addAction(a)
+        spacer = QWidget()
+        spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        top.addWidget(spacer)
+        self.login_btn = QPushButton("Log in")
+        self.login_btn.setObjectName("loginBtn")
+        self.login_btn.setToolTip("Sign in to your PhotoForge account in your web browser")
+        self.login_btn.clicked.connect(self._on_login_clicked)
+        top.addWidget(self.login_btn)
         self.addToolBar(Qt.TopToolBarArea, top)
+        self._update_auth_ui(self.auth.is_logged_in)
         self.addToolBarBreak(Qt.TopToolBarArea)
 
         # Second row: options for the current tool
@@ -350,6 +363,28 @@ class MainWindow(QMainWindow):
         self.opt_info = QLabel()
         self.opt_info.setObjectName("hintLabel")
         lay.addWidget(self.opt_info)
+
+    # ================================================================== account
+    def _on_login_clicked(self):
+        if self.auth.is_logged_in:
+            name = self.auth.email or "your account"
+            if QMessageBox.question(self, "Log out",
+                                    f"Log out of {name}?") == QMessageBox.Yes:
+                self.auth.logout()
+            return
+        self.auth.login()
+        self.statusBar().showMessage(
+            "Opening your web browser to sign in… return here when you're done.", 8000)
+
+    def _update_auth_ui(self, logged_in):
+        if logged_in:
+            email = self.auth.email or "Account"
+            self.login_btn.setText(f"●  {email}")
+            self.login_btn.setToolTip(f"Signed in as {email}. Click to log out.")
+            self.statusBar().showMessage(f"Signed in as {email}.", 6000)
+        else:
+            self.login_btn.setText("Log in")
+            self.login_btn.setToolTip("Sign in to your PhotoForge account in your web browser")
 
     def _build_statusbar(self):
         sb = self.statusBar()

@@ -5,9 +5,8 @@ import "./globals.css"
 const inter = Inter({ subsets: ["latin"], variable: "--font-sans" })
 
 export const metadata: Metadata = {
-  title: "Bigbird — Photo Editor",
-  description:
-    "Bigbird for the browser: a beginner-friendly photo editor with Lightroom-style adjustments and Photoshop-style tools.",
+  title: "PhotoForge — Account Sign In",
+  description: "Sign in to your PhotoForge account to connect the PhotoForge desktop photo editor.",
 }
 
 export const viewport: Viewport = {
