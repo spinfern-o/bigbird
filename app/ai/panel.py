@@ -25,6 +25,7 @@ class AIPanel(QScrollArea):
     removeBackground = Signal()
     refineOutline = Signal()
     removeObject = Signal()
+    refineRemoval = Signal()
 
     def __init__(self):
         super().__init__()
@@ -82,7 +83,22 @@ class AIPanel(QScrollArea):
         soon = QLabel("Coming soon: fill the gap with matching background (cloud AI).")
         soon.setWordWrap(True)
         soon.setObjectName("hintLabel")
+        row = QHBoxLayout()
+        row.addWidget(QLabel("Outline points for refining"))
+        self.removal_points = QSpinBox()
+        self.removal_points.setRange(8, 5000)
+        self.removal_points.setSingleStep(25)
+        self.removal_points.setValue(150)
+        self.removal_points.setToolTip("How many dots Refine Removal starts with. You can also "
+                                       "change it while refining.")
+        row.addWidget(self.removal_points)
+        self.refine_removal_btn = QPushButton("Refine Removal…")
+        self.refine_removal_btn.setToolTip("Adjust exactly what was removed: drag the dots, click "
+                                           "a line to add a dot, or change the number of points.")
+        self.refine_removal_btn.clicked.connect(self.refineRemoval)
         c.lay.addWidget(self.obj_btn)
+        c.lay.addLayout(row)
+        c.lay.addWidget(self.refine_removal_btn)
         c.lay.addWidget(soon)
         lay.addWidget(c)
 

@@ -801,7 +801,9 @@ class MainWindow(QMainWindow):
                              "Adjust the edge of a cut-out with draggable dots")
         self.a_ai_obj = A("Select Object(s) to Remove…", lambda: self.select_tool("ai_remove"),
                           None, "AI: click objects to select them, then remove them")
-        for a in (self.a_ai_bg, self.a_ai_refine, self.a_ai_obj):
+        self.a_ai_refine_rm = A("Refine Removal…", self.ai_refine_removal, None,
+                                "Adjust what was removed with draggable dots")
+        for a in (self.a_ai_bg, self.a_ai_refine, self.a_ai_obj, self.a_ai_refine_rm):
             self.ai_menu.addAction(a)
             self.doc_actions.append(a)
             a.setEnabled(self.doc is not None)
@@ -809,6 +811,7 @@ class MainWindow(QMainWindow):
         p.removeBackground.connect(self.ai_remove_background)
         p.refineOutline.connect(self.ai_refine_outline)
         p.removeObject.connect(lambda: self.select_tool("ai_remove"))
+        p.refineRemoval.connect(self.ai_refine_removal)
         self.canvas.outlineApply.connect(self._outline_apply)
         self.canvas.outlineCancel.connect(lambda: self.select_tool("hand"))
         self._outline_mode = None
@@ -940,7 +943,8 @@ class MainWindow(QMainWindow):
         full = backdrop.copy()
         full[..., 3] = 255
         self.canvas.set_backdrop(imageio.to_qimage(full))
-        ed.load_mask(ref_mask, self.ai_panel.points.value())
+        spin = self.ai_panel.removal_points if removal else self.ai_panel.points
+        ed.load_mask(ref_mask, spin.value())
         self.opt_title.setText("  Refine Removal  " if removal else "  Refine Outline  ")
         self.canvas.setFocus()
         self._outline_changed()
@@ -1048,6 +1052,34 @@ class MainWindow(QMainWindow):
         if self._outline_mode == "ai_select":
             self.canvas.outline.smaller_part()
             self.canvas.setFocus()
+
+    def ai_refine_removal(self):
+        """Re-open the removal outline of an "Objects removed" layer."""
+        if not self.doc:
+            return
+        layers = self.doc.layers
+        index = self.doc.active
+        if layers[index].source is None:  # fall back to the topmost removal layer
+            index = next((i for i in range(len(layers) - 1, -1, -1)
+                          if layers[i].source is not None), None)
+        if index is None:
+            QMessageBox.information(
+                self, "Refine Removal",
+                "There's no removed object to refine yet.\n\n"
+                "Use Select Object(s) to Remove first.")
+            return
+        self.doc.active = index
+        self.layers_panel.rebuild()
+        layer = layers[index]
+        src_a = layer.source[..., 3].astype(np.float32)
+        cur_a = layer.pixels[..., 3].astype(np.float32)
+        removed = np.where(src_a > 0, 255 - cur_a * 255 / np.maximum(src_a, 1), 0)
+        removed = np.clip(removed + 0.5, 0, 255).astype(np.uint8)
+        if not (removed > 127).any():
+            QMessageBox.information(self, "Refine Removal", "Nothing is removed on this layer.")
+            return
+        self._removal = (layer.source, index)
+        self._start_refine("ai_refine_removal", removed, layer.source)
 
     def _layer_for_mask(self, mask):
         """The topmost visible layer that actually has pixels where the objects are."""
