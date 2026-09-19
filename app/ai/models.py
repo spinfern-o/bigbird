@@ -38,10 +38,6 @@ MODELS = {
          (_SAM + "prompt_encoder_mask_decoder.onnx_data",
           "sam2.1_tiny/prompt_encoder_mask_decoder.onnx_data")),
         155, "Apache 2.0", "https://github.com/facebookresearch/sam2", gpu=True),
-    "lama": ModelInfo(
-        "lama", "LaMa (big-lama)", "Fill removed areas (cloud GPU)",
-        (("https://huggingface.co/Carve/LaMa-ONNX/resolve/main/lama_fp32.onnx", "lama_fp32.onnx"),),
-        208, "Apache 2.0", "https://github.com/advimman/lama", gpu=False, server_only=True),
 }
 
 
