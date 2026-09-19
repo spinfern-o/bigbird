@@ -22,19 +22,29 @@ can be built at the same time. See **[ROADMAP.txt](ROADMAP.txt)**.
 
 ## Account sign-in
 
-PhotoForge has a **Log in** button in the top toolbar. It signs you in through a
-web page (so credentials never live in the desktop app) using the standard
-native-app loopback flow:
+The desktop app starts on an account screen before the editor. If there is no
+saved session, pressing **Log in** opens the account page in the user's default
+browser (Safari, Chrome, Edge, etc.) using the standard native-app loopback flow:
 
-1. The app opens the sign-in page in your default browser (e.g. Safari).
-2. You sign in there (email + password, backed by Supabase).
+1. PhotoForge opens `https://www.phrame.tech/desktop-login` in the default browser.
+2. The user signs in there with email + password.
 3. The browser hands the session back to the app on a local `127.0.0.1`
-   callback, and the button switches to show your email.
+   callback and the editor opens.
+4. A saved session can be continued from the startup account screen on later launches.
+
+Account creation does not use an email-confirmation page. After signup, the web
+page tells the user the account was created and to close the page, return to the
+desktop app, and log in there.
 
 The sign-in web app lives in **[`web/`](web/)** (Next.js) and is deployed
-separately on Vercel. Point the desktop app at your deployment with the
-`BIGBIRD_WEB_URL` environment variable; it defaults to `http://localhost:3000`
-for local development.
+separately on Vercel. Packaged builds default to `https://www.phrame.tech`.
+For local development, override it with
+`BIGBIRD_WEB_URL=http://localhost:3000`.
+
+**Supabase configuration:** turn off **Confirm email** for password signups if
+the product should not send confirmation emails. Supabase controls whether that
+message is sent; removing the redirect/UI in this repository does not override
+that project-level setting.
 
 **Deployment (Vercel):** the website is the `web/` app, not `main.py`. In the
 Vercel project set **Root Directory = `web`** and **Framework Preset = Next.js**.
