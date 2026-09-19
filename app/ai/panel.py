@@ -26,7 +26,6 @@ class AIPanel(QScrollArea):
     refineOutline = Signal()
     removeObject = Signal()
     refineRemoval = Signal()
-    fillRemoved = Signal()
     openSettings = Signal()
 
     def __init__(self):
@@ -82,10 +81,6 @@ class AIPanel(QScrollArea):
         self.obj_btn = QPushButton("Select Object(s) to Remove")
         self.obj_btn.setObjectName("accent")
         self.obj_btn.clicked.connect(self.removeObject)
-        self.fill_btn = QPushButton("Fill Removed Area (cloud GPU)")
-        self.fill_btn.setToolTip("Fill the transparent gap left by removed objects with matching "
-                                 "background. Runs on your NVIDIA cloud GPU.")
-        self.fill_btn.clicked.connect(self.fillRemoved)
         row = QHBoxLayout()
         row.addWidget(QLabel("Outline points for refining"))
         self.removal_points = QSpinBox()
@@ -102,7 +97,6 @@ class AIPanel(QScrollArea):
         c.lay.addWidget(self.obj_btn)
         c.lay.addLayout(row)
         c.lay.addWidget(self.refine_removal_btn)
-        c.lay.addWidget(self.fill_btn)
         lay.addWidget(c)
 
         self.status = QLabel()
