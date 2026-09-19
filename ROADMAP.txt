@@ -45,22 +45,57 @@ A2. AI framework
       must never freeze.
     - Show a clear notice when a feature sends the photo to the cloud.
 
-A3. Remove Background (local: BiRefNet-lite or U2-Net)
+A3. Remove Background (local: BiRefNet-lite; see "Approved AI models" below)
     - One click: the result goes on a new layer (original stays underneath, hidden).
 
-A4. Click-to-Select (local: MobileSAM / EfficientSAM)
+A4. Click-to-Select (local: SAM 2.1 Tiny)
     - Click an object to select it; Shift+click adds, Alt+click subtracts.
     - Produces a normal selection (A1), so every selection feature works with it.
 
-A5. Remove Object (local: LaMa inpainting)
+A5. Remove Object (local: MI-GAN for small areas, LaMa for large areas)
     - Brush over or select something, click "Remove"; the result goes on a new layer.
 
-A6. Describe Your Edit / Generative Fill (cloud: NVIDIA - Qwen-Image-Edit, FLUX.2-klein)
+A6. Describe Your Edit / Generative Fill (cloud: NVIDIA - Qwen-Image-Edit, FLUX.2-klein 4B)
     - Text box: "make it sunset", "remove the people", "add snow".
     - With a selection: only the selected area is regenerated.
     - Result on a new layer; offer 2-3 variations to pick from.
 
-A7. AI Upscale 2x / 4x (Real-ESRGAN; local by default, cloud optional for big images)
+A7. AI Upscale 2x / 4x (Real-ESRGAN: realesr-general-x4v3 fast, x4plus best quality)
+
+A8. Open-source licenses screen
+    - Help > About > Open-source licenses: list every model and library with its
+      license text and copyright notice. MIT / Apache / BSD require this when the
+      app is distributed.
+
+APPROVED AI MODELS (all free to download and allowed in commercial products)
+    Licenses verified on each model's official page, September 2026.
+    RULE: only use models whose license allows commercial use. Before adding any
+    new model, check its license and add it to this table.
+
+    Feature             Model                         License       Where to get it
+    ------------------  ----------------------------  ------------  ------------------------------------------
+    Remove background   BiRefNet-lite (44M params)    MIT           huggingface.co/onnx-community/BiRefNet_lite-ONNX
+    Click-to-select     SAM 2.1 Tiny (39M params)     Apache 2.0    huggingface.co/facebook/sam2.1-hiera-tiny
+                                                                    (needs one-time ONNX export)
+    Remove small areas  MI-GAN                        MIT (code +   github.com/Picsart-AI-Research/MI-GAN
+                                                      weights)      (official ONNX provided)
+    Remove large areas  LaMa (big-lama)               Apache 2.0    github.com/advimman/lama
+    Upscale             Real-ESRGAN                   BSD-3-Clause  github.com/xinntao/Real-ESRGAN
+                        (realesr-general-x4v3, x4plus)
+    Cloud: edit         Qwen-Image-Edit               Apache 2.0    via NVIDIA build.nvidia.com
+    Cloud: edit/gen     FLUX.2-klein 4B               Apache 2.0    via NVIDIA build.nvidia.com
+
+    DO NOT USE (non-commercial licenses): RMBG-2.0 (CC BY-NC 4.0), CodeFormer,
+    FLUX.1-dev, FLUX.2-klein 9B. For face restoration, check GFPGAN (Apache) first.
+
+    Costs: the models themselves are free, with no fees or royalties; the only
+    obligation is attribution (A8). Running them locally costs nothing. The cloud
+    features cost money only for the NVIDIA hosting: free for development, paid
+    at scale. The same Apache models could also be self-hosted later.
+
+    Before picking each default, test both candidates on a few real photos with
+    the GPU disabled (simulating a weak laptop). Default = the best result that
+    finishes in about 3 seconds. Offer a "Fast / Best quality" setting.
 
 
 --------------------------------------------------------------------------------
