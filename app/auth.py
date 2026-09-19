@@ -161,7 +161,18 @@ class AuthManager(QObject):
             if _SESSION_PATH.exists():
                 data = json.loads(_SESSION_PATH.read_text())
                 if data.get("access_token") and data.get("refresh_token"):
-                    self._session = data
+                    expires_at = data.get("expires_at")
+                    try:
+                        expired = bool(expires_at) and float(expires_at) <= time.time()
+                    except (TypeError, ValueError):
+                        expired = False
+                    if expired:
+                        try:
+                            _SESSION_PATH.unlink()
+                        except OSError:
+                            pass
+                    else:
+                        self._session = data
         except (OSError, ValueError):
             self._session = None
 
