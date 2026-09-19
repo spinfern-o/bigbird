@@ -45,16 +45,16 @@ A2. AI framework  [PARTLY DONE: local backend, model downloader, background runn
       must never freeze.
     - Show a clear notice when a feature sends the photo to the cloud.
 
-A3. Remove Background (local: BiRefNet-lite; see "Approved AI models" below)  [DONE]
+A3. DONE          Remove Background (local: BiRefNet-lite; see "Approved AI models" below)  [DONE]
     - Plus "Refine Outline": editable dots and lines, More/Fewer Points; untouched
       edges keep the AI's fine detail.
     - One click: the result goes on a new layer (original stays underneath, hidden).
 
-A4. Click-to-Select (local: SAM 2.1 Tiny)  [DONE, used by "Select Object(s) to Remove"]
+A4. DONE          Click-to-Select (local: SAM 2.1 Tiny)  [DONE, used by "Select Object(s) to Remove"]
     - Click an object to select it; Shift+click adds, Alt+click subtracts.
     - Produces a normal selection (A1), so every selection feature works with it.
 
-A5. Remove Object  [DONE, redesigned]
+A5. DONE          Remove Object  [DONE, redesigned]
     - Click objects to select them (SAM 2.1). They are made transparent (not filled) on a
       new layer, then "Refine Removal" opens with editable dots.
     - Filling the gap moves to the cloud (A6). The local LaMa / MI-GAN fill was removed.
