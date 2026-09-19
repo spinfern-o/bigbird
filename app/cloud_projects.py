@@ -8,6 +8,7 @@ Only the public anon key is used here (it's meant to ship inside apps); everythi
 authorized by the user's own login token.
 """
 import base64
+import datetime
 import io
 import json
 import time
@@ -112,9 +113,10 @@ class Api:
         self._upload_file(file_path, project_bytes, "application/octet-stream")
         if thumb_png:
             self._upload_file(thumb_path, thumb_png, "image/jpeg")
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
         row = {"name": name, "file_path": file_path, "thumb_path": thumb_path,
                "size_bytes": len(project_bytes), "width": width, "height": height,
-               "updated_at": "now()"}
+               "updated_at": now}
         headers = self._headers({"Content-Type": "application/json",
                                  "Prefer": "return=representation"})
         if project_id:

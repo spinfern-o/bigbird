@@ -50,6 +50,27 @@ def run_cloud(parent, title, busy_text, fn, on_done):
     QThreadPool.globalInstance().start(_Job(fn, sig))
 
 
+class _ThumbLoader(QObject):
+    """Downloads project previews one by one on a worker thread."""
+    loaded = Signal(int, object)
+
+    def __init__(self, parent, api, wanted):
+        super().__init__(parent)
+        self.api, self.wanted = api, wanted
+
+    def start(self):
+        QThreadPool.globalInstance().start(_Job(self._work, _Signals(self)))
+
+    def _work(self):
+        for index, path in self.wanted:
+            try:
+                data = self.api.download_thumb(path)
+            except cloud_projects.CloudError:
+                continue
+            if data:
+                self.loaded.emit(index, data)
+
+
 class CloudProjectsDialog(QDialog):
     """Lists the signed-in user's cloud projects, with previews."""
 
@@ -98,17 +119,20 @@ class CloudProjectsDialog(QDialog):
         self.delete_btn.setEnabled(bool(rows))
 
     def load_thumbs(self):
-        """Fetch preview images (called after the window is shown)."""
-        for i in range(self.list.count()):
-            item = self.list.item(i)
-            row = item.data(Qt.UserRole)
-            if not row or not row.get("thumb_path"):
-                continue
-            data = self.api.download_thumb(row["thumb_path"])
-            if data:
-                pix = QPixmap()
-                if pix.loadFromData(data):
-                    item.setIcon(QIcon(pix))
+        """Fetch preview images in the background so the window stays responsive."""
+        wanted = [(i, self.list.item(i).data(Qt.UserRole)) for i in range(self.list.count())]
+        wanted = [(i, r["thumb_path"]) for i, r in wanted if r and r.get("thumb_path")]
+        if not wanted:
+            return
+        self._thumbs = _ThumbLoader(self, self.api, wanted)
+        self._thumbs.loaded.connect(self._set_thumb)
+        self._thumbs.start()
+
+    def _set_thumb(self, index, data):
+        item = self.list.item(index)
+        pix = QPixmap()
+        if item and data and pix.loadFromData(data):
+            item.setIcon(QIcon(pix))
 
     def _selected(self):
         item = self.list.currentItem()
