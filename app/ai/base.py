@@ -35,7 +35,7 @@ from . import tasks
 
 # Where our proxy lives. Override for local development:
 #   export PHOTOFORGE_CLOUD_URL="http://localhost:3000/api/edit"
-DEFAULT_CLOUD_URL = "https://phrame.tech/api/edit"
+DEFAULT_CLOUD_URL = "https://www.phrame.tech/api/edit"
 
 # Generative models work at roughly 1 megapixel, and Vercel caps function
 # request bodies at 4.5 MB. Downscaling to this before sending keeps a base64
