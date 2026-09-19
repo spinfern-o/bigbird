@@ -47,7 +47,7 @@ inside the desktop app. Set these in the Vercel project:
 
 | Variable | Notes |
 |---|---|
-| `NVIDIA_API_KEY` | **Never** prefix with `NEXT_PUBLIC_` -- that would inline it into the browser bundle and publish it. |
+| `NVIDIA_QWEN_IMAGE_EDIT_KEY` | The NVIDIA key. **Never** prefix with `NEXT_PUBLIC_` -- that would inline it into the browser bundle and publish it. `NVIDIA_API_KEY` is accepted as a fallback. |
 | `NIM_ENDPOINT` | Full NVIDIA NIM invoke URL; confirm the current path on build.nvidia.com. |
 
 Point the desktop app at it with `PHOTOFORGE_CLOUD_URL`
