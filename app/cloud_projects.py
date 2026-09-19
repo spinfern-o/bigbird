@@ -219,7 +219,10 @@ class Api:
             )
 
         result = json.loads(out) if out else []
-        return result[0] if isinstance(result, list) and result else {"id": key, **row}
+        if not isinstance(result, list) or not result:
+            action = "update" if project_id else "create"
+            raise CloudError(f"Cloud storage did not {action} the project metadata.")
+        return result[0]
 
     def delete_project(self, row):
         uid = self.user_id()
