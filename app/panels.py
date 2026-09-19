@@ -277,13 +277,14 @@ class AdjustPanel(QScrollArea):
         self.mixer_pages = {}
         self.mixer_stack = QStackedWidget()
         for band, label, _center, color in adjustments.MIXER_BANDS:
-            tip = (f"Edit the {label.lower()} parts of the photo. Nothing else is touched.")
+            tip = f"Edit the {label.lower()} parts of the photo. Nothing else is touched."
             b = QToolButton()
             b.setCheckable(True)
             b.setAutoExclusive(True)
             b.setFixedSize(QSize(32, 24))
             b.setToolTip(f"{label}\n\n{tip}")
             b.setStatusTip(tip)
+            b.setProperty("edited", False)
             b.setStyleSheet(_swatch_style(color, False))
             b.clicked.connect(lambda _=False, n=band: self._mixer_band_chosen(n))
             swatches.addWidget(b)
@@ -335,7 +336,10 @@ class AdjustPanel(QScrollArea):
         for band, _label, _center, color in adjustments.MIXER_BANDS:
             edited = any(settings.get(adjustments.mixer_key(band, c[0]), 0)
                          for c in adjustments.MIXER_CHANNELS)
-            self.mixer_swatches[band].setStyleSheet(_swatch_style(color, edited))
+            btn = self.mixer_swatches[band]
+            if btn.property("edited") != edited:  # restyling on every slider tick is wasteful
+                btn.setProperty("edited", edited)
+                btn.setStyleSheet(_swatch_style(color, edited))
 
     def set_preset_thumbs(self, base):
         """base: small RGBA uint8 preview of the current photo."""
