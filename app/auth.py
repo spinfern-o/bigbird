@@ -10,9 +10,9 @@ Uses the standard native-app "loopback redirect" flow:
   4. This module validates ``state``, stores the session locally, and notifies
      the UI via the ``authChanged`` Qt signal.
 
-The web page lives in ``web/`` and is deployed separately. Point the app at it
-with the ``BIGBIRD_WEB_URL`` environment variable; it defaults to the local dev
-server so the flow can be exercised end to end during development.
+The web page lives in ``web/`` and is deployed separately. Production defaults
+to ``https://www.phrame.tech``; set ``BIGBIRD_WEB_URL`` to override it (for
+example, ``http://localhost:3000`` during local web development).
 """
 
 from __future__ import annotations
@@ -29,8 +29,8 @@ from urllib.parse import parse_qs, urlencode, urlparse
 from PySide6.QtCore import QObject, QUrl, Signal
 
 # Where the account web page is hosted. Override in production, e.g.
-#   export BIGBIRD_WEB_URL="https://your-app.vercel.app"
-DEFAULT_WEB_URL = "http://localhost:3000"
+#   export BIGBIRD_WEB_URL="http://localhost:3000"  # local web development
+DEFAULT_WEB_URL = "https://www.phrame.tech"
 
 # Abandon a pending sign-in if the browser never comes back.
 LOGIN_TIMEOUT_SECONDS = 300
