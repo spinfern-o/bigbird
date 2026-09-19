@@ -14,6 +14,12 @@ Or from a terminal:
 .venv\Scripts\python main.py
 ```
 
+## Roadmap
+
+Planned work is split into two parallel tracks, **Track A: Selections & AI** and
+**Track B: Pro Editing & Lightroom Features**, with file-ownership rules so both
+can be built at the same time. See **[ROADMAP.txt](ROADMAP.txt)**.
+
 ## Features
 
 **Develop (Lightroom-like, non-destructive)**
