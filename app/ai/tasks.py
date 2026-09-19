@@ -63,31 +63,3 @@ def logits_to_mask(logits, w, h):
     """Upscale SAM's 256x256 logits to w x h and return a soft-edged uint8 mask."""
     up = cv2.resize(logits.astype(np.float32), (w, h), interpolation=cv2.INTER_LINEAR)
     return (255.0 / (1.0 + np.exp(-np.clip(up * 2.0, -30, 30))) + 0.5).astype(np.uint8)
-
-
-# --------------------------------------------------------------------------- fill (LaMa)
-
-def fill_box(mask):
-    """A square crop around the area to fill, with context, as (x0, y0, x1, y1)."""
-    H, W = mask.shape
-    ys, xs = np.nonzero(mask > 127)
-    y0, y1, x0, x1 = ys.min(), ys.max() + 1, xs.min(), xs.max() + 1
-    side = int(max(y1 - y0, x1 - x0) * 1.8) + 32
-    side = min(max(side, 512), max(H, W))
-    cy, cx = (y0 + y1) // 2, (x0 + x1) // 2
-    top = int(np.clip(cy - side // 2, 0, max(0, H - side)))
-    left = int(np.clip(cx - side // 2, 0, max(0, W - side)))
-    return left, top, min(W, left + side), min(H, top + side)
-
-
-def lama_fill(rgb, mask):
-    """Fill mask>127 in an RGB crop with LaMa (fixed 512x512); returns an RGB crop."""
-    h, w = mask.shape
-    img = cv2.resize(rgb, (512, 512), interpolation=cv2.INTER_AREA if h > 512 else cv2.INTER_CUBIC)
-    m = (cv2.resize(mask, (512, 512), interpolation=cv2.INTER_NEAREST) > 127).astype(np.float32)
-    img = img.astype(np.float32).transpose(2, 0, 1)[None] / 255.0
-    m = m[None, None]
-    out = models.run("lama", {"image": np.ascontiguousarray(img * (1 - m), np.float32),
-                              "mask": np.ascontiguousarray(m)})[0]
-    out = np.clip(out[0].transpose(1, 2, 0), 0, 255).astype(np.uint8)
-    return cv2.resize(out, (w, h), interpolation=cv2.INTER_CUBIC)
