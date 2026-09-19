@@ -1,0 +1,130 @@
+PHOTOFORGE ROADMAP - WORK SPLIT INTO TWO PARALLEL TRACKS
+========================================================
+
+The remaining work is split into two tracks that can be built at the same time.
+Each track mostly owns its own files, so the two developers rarely edit the same
+code. Where they must touch shared files, follow the "Shared files" rules below.
+
+  TRACK A - Selections & AI
+  TRACK B - Pro Editing & Lightroom Features
+
+Workflow for everyone:
+  * One branch + one pull request per numbered task (e.g. branch "a2-ai-framework").
+  * Keep PRs small. Rebase on main before opening a PR, and after the other
+    track merges something.
+  * Every new control gets a plain-English tooltip and a status-bar hint.
+    PhotoForge is for beginners.
+  * Every change must be undoable (use doc.push_undo before changing state).
+
+
+--------------------------------------------------------------------------------
+TRACK A - SELECTIONS & AI
+--------------------------------------------------------------------------------
+Owns:  app/selection.py (new), app/ai/ (new package), app/ai_dialogs.py (new)
+
+A1. Selection system  [do this first - A3-A6 depend on it]
+    - Document gets `selection`: an HxW uint8 mask (None = everything selected).
+    - Tools: Rectangle select, Ellipse select, Lasso.
+    - "Marching ants" outline on the canvas.
+    - Select menu: Select All (Ctrl+A), Deselect (Ctrl+D), Invert (Ctrl+Shift+I),
+      Feather...
+    - Brush, eraser and filters only affect the selected area when a selection exists.
+    - Delete key clears the selected pixels; Ctrl+J copies the selection to a new layer.
+
+A2. AI framework
+    - app/ai/base.py: one interface, `run(task, image, mask, prompt) -> image`,
+      with two backends:
+        * LocalBackend  - ONNX Runtime + DirectML (uses any GPU, falls back to CPU)
+        * CloudBackend  - NVIDIA NIM API (build.nvidia.com); keep it easy to add
+                          Replicate/fal later
+    - AI Settings dialog: NVIDIA API key (stored locally, never in the repo),
+      "Prefer local / prefer cloud" choice.
+    - Model downloader: downloads each model the first time a feature is used,
+      with a progress bar and a cancel button. Store models in %LOCALAPPDATA%\PhotoForge\models.
+    - All AI work runs on a background thread with a progress indicator; the UI
+      must never freeze.
+    - Show a clear notice when a feature sends the photo to the cloud.
+
+A3. Remove Background (local: BiRefNet-lite or U2-Net)
+    - One click: the result goes on a new layer (original stays underneath, hidden).
+
+A4. Click-to-Select (local: MobileSAM / EfficientSAM)
+    - Click an object to select it; Shift+click adds, Alt+click subtracts.
+    - Produces a normal selection (A1), so every selection feature works with it.
+
+A5. Remove Object (local: LaMa inpainting)
+    - Brush over or select something, click "Remove"; the result goes on a new layer.
+
+A6. Describe Your Edit / Generative Fill (cloud: NVIDIA - Qwen-Image-Edit, FLUX.2-klein)
+    - Text box: "make it sunset", "remove the people", "add snow".
+    - With a selection: only the selected area is regenerated.
+    - Result on a new layer; offer 2-3 variations to pick from.
+
+A7. AI Upscale 2x / 4x (Real-ESRGAN; local by default, cloud optional for big images)
+
+
+--------------------------------------------------------------------------------
+TRACK B - PRO EDITING & LIGHTROOM FEATURES
+--------------------------------------------------------------------------------
+Owns:  app/adjustments.py, app/panels.py (AdjustPanel part), app/curves.py (new),
+       app/library.py (new), app/retouch.py (new), packaging files
+
+B1. Color Mixer (HSL)
+    - Hue / Saturation / Luminance for 8 colors (red, orange, yellow, green,
+      aqua, blue, purple, magenta). New "Color Mixer" section in the Adjust tab.
+    - Add a few presets that use it (e.g. "Teal & Orange").
+
+B2. Tone Curve
+    - Draggable curve widget (RGB + separate R/G/B), plus simple
+      "Lights / Darks" region sliders for beginners.
+
+B3. Layer Masks
+    - Layer gets an optional `mask` (HxW uint8). Compositing respects it.
+    - "Add Mask" button in the Layers panel; paint black/white on the mask with the brush.
+    - Mask thumbnail next to the layer thumbnail.
+    - (Integration with A1: "Mask from Selection" - whoever lands second adds it.)
+
+B4. Retouch tools
+    - Clone Stamp (Alt+click to set the source).
+    - Spot Healing brush (blends texture and color from nearby).
+    - Red-eye removal.
+
+B5. Local adjustments (Lightroom-style)
+    - Graduated filter and Radial filter: drag on the photo, then apply exposure,
+      temperature, saturation etc. only inside it.
+
+B6. Library / multiple photos
+    - Folder browser with a thumbnail filmstrip; star ratings.
+    - Copy / paste adjustment settings between photos.
+    - Batch export (same settings, many photos).
+
+B7. App polish & shipping
+    - Remember window layout, recent files, last folder (QSettings).
+    - History panel (click any step to jump back).
+    - App icon, proper .exe and installer (PyInstaller + Inno Setup).
+    - Crash-safe autosave of the open project.
+
+
+--------------------------------------------------------------------------------
+SHARED FILES - RULES TO AVOID CONFLICTS
+--------------------------------------------------------------------------------
+These files are used by both tracks. Keep edits to them small and additive
+(add new methods/menu entries; don't reorganise existing code in the same PR):
+
+  app/document.py     A adds `selection`; B adds `Layer.mask`. Coordinate on
+                      compositing: B owns composite(); A only reads the selection.
+  app/canvas.py       Each new tool goes in its own clearly named methods.
+                      Tool ids: A uses "select_rect", "select_ellipse", "lasso",
+                      "ai_select"; B uses "clone", "heal", "gradient", "radial".
+  app/main_window.py  Add menus/actions through small helper methods
+                      (e.g. _build_ai_menu, _build_retouch_tools) rather than
+                      editing existing blocks.
+  app/icons.py        Append new icon functions only.
+  requirements.txt    Append only. (A adds onnxruntime-directml, requests.)
+
+Merge order that avoids the most pain:
+  1. A1 (selection) and B1 (HSL) can start immediately, since they don't overlap.
+  2. B3 (masks) should rebase after A1 lands, since both touch compositing/canvas.
+  3. Everything else is independent.
+
+Suggested start:  Track A -> A1, then A2.   Track B -> B1, then B2.
