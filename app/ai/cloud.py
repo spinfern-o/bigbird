@@ -134,22 +134,6 @@ class Client:
     def sam_image(self, rgba):
         return CloudSam(self, rgba)
 
-    def fill(self, rgb, mask):
-        """Fill the masked area of a full-size RGB image; only a crop around it is uploaded.
-        Returns (filled RGB, soft blend mask). The area is grown a little first: leftover
-        edge pixels of a removed object would otherwise be "continued" into the fill."""
-        h, w = mask.shape
-        grow = int(max(6, 0.012 * np.hypot(h, w)))
-        k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * grow + 1, 2 * grow + 1))
-        hole = cv2.dilate(((mask > 20) * 255).astype(np.uint8), k)
-        x0, y0, x1, y1 = tasks.fill_box(hole)
-        filled = self._post("/fill", image=np.ascontiguousarray(rgb[y0:y1, x0:x1]),
-                            mask=np.ascontiguousarray(hole[y0:y1, x0:x1]))["image"]
-        out = rgb.copy()
-        out[y0:y1, x0:x1] = filled
-        soft = np.maximum(cv2.GaussianBlur(hole, (0, 0), grow / 3), mask)
-        return out, soft
-
 
 class CloudSam:
     """Same interface as tasks.SamImage, but the model runs on the cloud GPU."""
