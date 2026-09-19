@@ -143,8 +143,8 @@ B6. Library / multiple photos
     - Copy / paste adjustment settings between photos.
     - Batch export (same settings, many photos).
 
-B7. App polish & shipping
-    - Remember window layout, recent files, last folder (QSettings).
+B7. App polish & shipping  [PARTLY DONE: window geometry, recent files, last folder]
+    - Remember window layout, recent files, last folder (QSettings).  [DONE]
     - History panel (click any step to jump back).
     - App icon, proper .exe and installer (PyInstaller + Inno Setup).
     - Crash-safe autosave of the open project.
