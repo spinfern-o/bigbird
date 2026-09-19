@@ -41,7 +41,44 @@ SLIDERS = [
      "Makes fine details crisper. A little goes a long way."),
 ]
 
+# Color Mixer (HSL): eight hue bands, each with its own Hue / Saturation / Luminance.
+# (key, label, center hue in degrees, swatch color shown in the panel)
+MIXER_BANDS = [
+    ("red", "Red", 0, "#e0463c"),
+    ("orange", "Orange", 30, "#e2892c"),
+    ("yellow", "Yellow", 60, "#dcc324"),
+    ("green", "Green", 120, "#46a94f"),
+    ("aqua", "Aqua", 180, "#2fb3bd"),
+    ("blue", "Blue", 240, "#3d6fd6"),
+    ("purple", "Purple", 280, "#8a4ed0"),
+    ("magenta", "Magenta", 320, "#d2469c"),
+]
+
+# (key, label, tooltip; {c} is replaced with the color name, e.g. "red")
+MIXER_CHANNELS = [
+    ("hue", "Hue",
+     "Nudges the {c} parts of the photo towards the neighbouring colors, without touching "
+     "anything else. Great for turning a {c} that looks slightly off into exactly the shade you want."),
+    ("sat", "Saturation",
+     "Makes only the {c} parts stronger (right) or duller (left). All the way left turns just "
+     "the {c} areas grey."),
+    ("lum", "Luminance",
+     "Makes only the {c} parts brighter (right) or darker (left). Try dragging left on Blue "
+     "for a deeper sky."),
+]
+
+MIXER_RANGE = (-100, 100)
+
+
+def mixer_key(band, channel):
+    """The settings key for one Color Mixer slider, e.g. mixer_key("red", "hue")."""
+    return f"mix_{band}_{channel}"
+
+
+MIXER_DEFAULTS = {mixer_key(b[0], c[0]): 0 for b in MIXER_BANDS for c in MIXER_CHANNELS}
+
 DEFAULTS = {key: 0 for _, key, *_ in SLIDERS}
+DEFAULTS.update(MIXER_DEFAULTS)
 
 PRESETS = {
     "Original": {},
@@ -60,6 +97,28 @@ PRESETS = {
     "B&W Classic": {"saturation": -100, "contrast": 20, "clarity": 10},
     "B&W Noir": {"saturation": -100, "contrast": 60, "blacks": -30, "vignette": -50, "grain": 25},
     "Clear Skies": {"highlights": -60, "dehaze": 30, "vibrance": 25, "temperature": -8},
+    # --- looks built on the Color Mixer (HSL) ---
+    "Teal & Orange": {"contrast": 15, "temperature": 10, "vibrance": 10,
+                      "mix_red_hue": 8, "mix_red_sat": 12,
+                      "mix_orange_sat": 30, "mix_orange_lum": 8,
+                      "mix_yellow_hue": -35, "mix_yellow_sat": 15,
+                      "mix_green_hue": 45, "mix_green_sat": -25,
+                      "mix_aqua_sat": 30, "mix_aqua_lum": -10,
+                      "mix_blue_hue": -45, "mix_blue_sat": 25, "mix_blue_lum": -15},
+    "Golden Sunset": {"temperature": 20, "contrast": 12, "highlights": -15,
+                      "mix_red_sat": 25, "mix_red_lum": 5,
+                      "mix_orange_hue": -12, "mix_orange_sat": 35, "mix_orange_lum": 12,
+                      "mix_yellow_hue": -25, "mix_yellow_sat": 25,
+                      "mix_magenta_sat": 20,
+                      "mix_blue_lum": -30, "mix_blue_sat": 15},
+    "Lush Greens": {"vibrance": 15, "contrast": 8,
+                    "mix_yellow_hue": 30, "mix_yellow_sat": 15, "mix_yellow_lum": -10,
+                    "mix_green_hue": 15, "mix_green_sat": 35, "mix_green_lum": -18,
+                    "mix_aqua_sat": 20},
+    "Deep Blue Sky": {"dehaze": 20, "contrast": 10,
+                      "mix_aqua_sat": 30, "mix_aqua_lum": -20,
+                      "mix_blue_hue": -10, "mix_blue_sat": 35, "mix_blue_lum": -35,
+                      "mix_purple_sat": 15},
 }
 
 
@@ -71,6 +130,20 @@ def preset_settings(name):
 
 def is_default(s):
     return all(s.get(k, 0) == 0 for k in DEFAULTS)
+
+
+def mixer_is_default(s):
+    return all(s.get(k, 0) == 0 for k in MIXER_DEFAULTS)
+
+
+def setting_label(key):
+    """Human-readable name for a settings key, used for undo steps."""
+    if key in MIXER_DEFAULTS:
+        _, band, channel = key.split("_")
+        band_label = next(b[1] for b in MIXER_BANDS if b[0] == band)
+        channel_label = next(c[1] for c in MIXER_CHANNELS if c[0] == channel)
+        return f"{band_label} {channel_label}"
+    return key.title()
 
 
 # --------------------------------------------------------------------------- helpers
@@ -104,6 +177,67 @@ def blur(a, sigma):
     for _ in range(3):
         out = _box1d(out, r, 0)
         out = _box1d(out, r, 1)
+    return out
+
+
+# --------------------------------------------------------------------- color mixer
+
+_MIX_BINS = 256          # hue resolution of the lookup tables below
+_MIX_HUE_DEGREES = 30.0  # how far a hue slider at 100 shifts a color, in degrees
+_MIX_LUM_AMOUNT = 0.75   # how far a luminance slider at 100 pushes towards white/black
+
+
+def _mixer_luts(s):
+    """Three 256-entry lookup tables (hue shift, saturation, luminance), indexed by hue bin.
+
+    Each band's value is spread over the hue circle by interpolating between the band
+    centers, so a color sitting between two bands is affected by both (the weights always
+    add up to 1). Returns None when every Color Mixer slider is still at zero.
+    """
+    if mixer_is_default(s):
+        return None
+    centers = np.array([b[2] for b in MIXER_BANDS], np.float32)
+    x = (np.arange(_MIX_BINS, dtype=np.float32) + 0.5) * (360.0 / _MIX_BINS)
+    luts = []
+    for channel, _label, _tip in MIXER_CHANNELS:
+        vals = np.array([s.get(mixer_key(b[0], channel), 0) / 100.0 for b in MIXER_BANDS],
+                        np.float32)
+        luts.append(np.interp(x, centers, vals, period=360).astype(np.float32))
+    return luts
+
+
+def _color_mixer(rgb, luts):
+    """Per-color Hue/Saturation/Luminance, done in HSL space. rgb is float32 0..1."""
+    hue_lut, sat_lut, lum_lut = luts
+    r, g, b = rgb[..., 0], rgb[..., 1], rgb[..., 2]
+    mx, mn = rgb.max(axis=2), rgb.min(axis=2)
+    chroma = mx - mn
+    L = (mx + mn) * 0.5
+    safe = np.maximum(chroma, 1e-6)
+    hue = np.where(mx == r, ((g - b) / safe) % 6.0,
+                   np.where(mx == g, (b - r) / safe + 2.0, (r - g) / safe + 4.0)) * 60.0
+    hue = np.where(chroma > 1e-6, hue, 0.0).astype(np.float32)
+    # Near-grey pixels have a meaningless hue, so fade the effect out for them.
+    weight = _smoothstep(0.02, 0.12, chroma).astype(np.float32)
+    idx = np.clip((hue * (_MIX_BINS / 360.0)).astype(np.int32), 0, _MIX_BINS - 1)
+
+    S = np.divide(chroma, np.maximum(1.0 - np.abs(2.0 * L - 1.0), 1e-6),
+                  out=np.zeros_like(chroma), where=chroma > 1e-6)
+    np.clip(S, 0.0, 1.0, out=S)
+
+    hue = (hue + hue_lut[idx] * (_MIX_HUE_DEGREES * weight)) % 360.0
+    sat = sat_lut[idx] * weight
+    S = np.where(sat >= 0, S + sat * (1.0 - S), S * (1.0 + sat))
+    lum = lum_lut[idx] * weight * _MIX_LUM_AMOUNT
+    L = np.clip(np.where(lum >= 0, L + lum * (1.0 - L), L * (1.0 + lum)), 0.0, 1.0)
+
+    # HSL -> RGB (the compact f(n) form: no per-sector branching).
+    a = S * np.minimum(L, 1.0 - L)
+    hp = hue * (1 / 30.0)
+    out = np.empty_like(rgb)
+    for ch, n in ((0, 0.0), (1, 8.0), (2, 4.0)):
+        k = (n + hp) % 12.0
+        out[..., ch] = L - a * np.clip(np.minimum(k - 3.0, 9.0 - k), -1.0, 1.0)
     return out
 
 
@@ -178,6 +312,11 @@ def apply(rgba, s, detail_scale=1.0):
         rgb = L + (rgb - L) * factor
 
     np.clip(rgb, 0.0, 1.0, out=rgb)
+
+    # Color Mixer: hue / saturation / luminance for eight color bands.
+    luts = _mixer_luts(s)
+    if luts is not None:
+        rgb = _color_mixer(rgb, luts)
 
     fd = g("fade")
     if fd:

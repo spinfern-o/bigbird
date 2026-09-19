@@ -1,11 +1,11 @@
 """Right-hand side panels: Adjust (Lightroom-style develop) and Layers."""
 import numpy as np
-from PySide6.QtCore import QSize, Qt, Signal
+from PySide6.QtCore import QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QIcon, QImage, QPainter, QPainterPath, QPixmap
 from PySide6.QtWidgets import (QAbstractItemView, QColorDialog, QComboBox, QFrame, QGridLayout,
                                QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QPushButton,
-                               QScrollArea, QSizePolicy, QSlider, QToolButton, QVBoxLayout,
-                               QWidget)
+                               QScrollArea, QSizePolicy, QSlider, QStackedWidget, QToolButton,
+                               QVBoxLayout, QWidget)
 
 from . import adjustments, imageio
 from .document import BLEND_MODES
@@ -17,6 +17,29 @@ SLIDER_GRADIENTS = {
     "vibrance": "stop:0 #8a8a8a, stop:1 #ff9f1c",
     "exposure": "stop:0 #111111, stop:1 #ffffff",
 }
+
+
+def _add_mixer_gradients():
+    """Paint each Color Mixer slider with the colors it actually produces."""
+    bands = adjustments.MIXER_BANDS
+    for i, (band, _label, _center, color) in enumerate(bands):
+        prev_color, next_color = bands[i - 1][3], bands[(i + 1) % len(bands)][3]
+        SLIDER_GRADIENTS[adjustments.mixer_key(band, "hue")] = \
+            f"stop:0 {prev_color}, stop:0.5 {color}, stop:1 {next_color}"
+        SLIDER_GRADIENTS[adjustments.mixer_key(band, "sat")] = f"stop:0 #8a8a8a, stop:1 {color}"
+        SLIDER_GRADIENTS[adjustments.mixer_key(band, "lum")] = \
+            f"stop:0 #111111, stop:0.5 {color}, stop:1 #ffffff"
+
+
+_add_mixer_gradients()
+
+
+def _swatch_style(color, edited):
+    marker = "#6cb4ff" if edited else "#3a3a40"
+    return (f"QToolButton {{ background: {color}; border: 2px solid {marker};"
+            " border-radius: 5px; }"
+            f"QToolButton:hover {{ background: {color}; border-color: #cfcfd4; }}"
+            f"QToolButton:checked {{ background: {color}; border-color: #ffffff; }}")
 
 
 class NoWheelSlider(QSlider):
@@ -158,6 +181,14 @@ class Section(QWidget):
         lay.addWidget(self.btn)
         lay.addWidget(self.body)
         self.btn.toggled.connect(self._toggle)
+        # A section is filled in after it is created, and Qt can keep the size it guessed
+        # while the body was still empty — which squashed the sliders down to nothing.
+        # Recompute once the whole panel has been built.
+        QTimer.singleShot(0, self._relayout)
+
+    def _relayout(self):
+        self.body_lay.invalidate()
+        self.body_lay.activate()
 
     def _toggle(self, on):
         self.body.setVisible(on)
@@ -170,6 +201,8 @@ class AdjustPanel(QScrollArea):
     presetChosen = Signal(str)
     autoRequested = Signal()
     resetRequested = Signal()
+    mixerResetRequested = Signal()
+    hint = Signal(str)               # plain-English message for the status bar
 
     def __init__(self):
         super().__init__()
@@ -224,12 +257,89 @@ class AdjustPanel(QScrollArea):
             r.valueChanged.connect(self.settingChanged)
             sections[sec].body_lay.addWidget(r)
             self.rows[key] = r
+        self.mixer = self._build_color_mixer()
+        lay.insertWidget(lay.indexOf(sections["Color"]) + 1, self.mixer)
         lay.addStretch(1)
         self.setWidget(root)
+
+    def _build_color_mixer(self):
+        """Color Mixer (HSL): pick one of eight colors, then bend only that color."""
+        sec = Section("Color Mixer — tune one color at a time")
+        intro = QLabel("Pick a color, then move the sliders to change only that color "
+                       "in your photo — everything else stays as it is.")
+        intro.setWordWrap(True)
+        intro.setObjectName("hintLabel")
+        sec.body_lay.addWidget(intro)
+
+        swatches = QHBoxLayout()
+        swatches.setSpacing(4)
+        self.mixer_swatches = {}
+        self.mixer_pages = {}
+        self.mixer_stack = QStackedWidget()
+        for band, label, _center, color in adjustments.MIXER_BANDS:
+            tip = f"Edit the {label.lower()} parts of the photo. Nothing else is touched."
+            b = QToolButton()
+            b.setCheckable(True)
+            b.setAutoExclusive(True)
+            b.setFixedSize(QSize(32, 24))
+            b.setToolTip(f"{label}\n\n{tip}")
+            b.setStatusTip(tip)
+            b.setProperty("edited", False)
+            b.setStyleSheet(_swatch_style(color, False))
+            b.clicked.connect(lambda _=False, n=band: self._mixer_band_chosen(n))
+            swatches.addWidget(b)
+            self.mixer_swatches[band] = b
+
+            page = QWidget()
+            page_lay = QVBoxLayout(page)
+            page_lay.setContentsMargins(0, 0, 0, 0)
+            page_lay.setSpacing(0)
+            for channel, ch_label, ch_tip in adjustments.MIXER_CHANNELS:
+                key = adjustments.mixer_key(band, channel)
+                lo, hi = adjustments.MIXER_RANGE
+                tooltip = ch_tip.format(c=label.lower())
+                r = SliderRow(key, f"{label} {ch_label}", lo, hi, tooltip)
+                r.slider.setStatusTip(tooltip)
+                r.valueChanged.connect(self.settingChanged)
+                page_lay.addWidget(r)
+                self.rows[key] = r
+            self.mixer_stack.addWidget(page)
+            self.mixer_pages[band] = page
+        swatches.addStretch(1)
+        sec.body_lay.addLayout(swatches)
+        sec.body_lay.addWidget(self.mixer_stack)
+
+        self.mixer_reset_btn = QPushButton("Reset Color Mixer")
+        reset_tip = "Put every Color Mixer slider back to zero (one undo step)."
+        self.mixer_reset_btn.setToolTip(reset_tip)
+        self.mixer_reset_btn.setStatusTip(reset_tip)
+        self.mixer_reset_btn.clicked.connect(self.mixerResetRequested)
+        sec.body_lay.addWidget(self.mixer_reset_btn)
+
+        first = adjustments.MIXER_BANDS[0][0]
+        self.mixer_swatches[first].setChecked(True)
+        return sec
+
+    def _mixer_band_chosen(self, band):
+        label = next(b[1] for b in adjustments.MIXER_BANDS if b[0] == band)
+        self.mixer_stack.setCurrentWidget(self.mixer_pages[band])
+        self.hint.emit(f"Color Mixer: editing {label}. Hue changes the shade, Saturation how "
+                       f"strong it is, Luminance how bright — only for {label.lower()} areas.")
 
     def sync(self, settings):
         for k, r in self.rows.items():
             r.set_silently(settings.get(k, 0))
+        self._sync_mixer_swatches(settings)
+
+    def _sync_mixer_swatches(self, settings):
+        """Outline the swatches of colors that have been edited, so nothing is hidden."""
+        for band, _label, _center, color in adjustments.MIXER_BANDS:
+            edited = any(settings.get(adjustments.mixer_key(band, c[0]), 0)
+                         for c in adjustments.MIXER_CHANNELS)
+            btn = self.mixer_swatches[band]
+            if btn.property("edited") != edited:  # restyling on every slider tick is wasteful
+                btn.setProperty("edited", edited)
+                btn.setStyleSheet(_swatch_style(color, edited))
 
     def set_preset_thumbs(self, base):
         """base: small RGBA uint8 preview of the current photo."""
