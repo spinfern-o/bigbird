@@ -175,23 +175,6 @@ def list_instances():
     return found
 
 
-def instance_status(name):
-    found = list_instances()
-    if isinstance(found, str):
-        return None
-    return dict(found).get(name, "NOT_FOUND")
-
-
-def start_instance(name):
-    code, out = _run(["start", name], timeout=900)
-    return code == 0
-
-
-def stop_instance(name):
-    code, out = _run(["stop", name], timeout=120)
-    return code == 0
-
-
 # --------------------------------------------------------------------------- setting up the GPU
 
 _SSH_CMD_OPTS = ("-T -o BatchMode=yes -o ControlMaster=no -o ControlPath=none "
@@ -295,7 +278,7 @@ def _ensure_token():
 
 
 def connect_blocking(progress=lambda msg: None):
-    """Connect to the GPU, starting/setting it up if needed. Returns (ok, message).
+    """Connect to the GPU, setting up its server if needed. Returns (ok, message).
     Runs on a worker thread; progress(msg) reports what it's doing."""
     s = cloud.get_settings()
     token = _ensure_token()
@@ -310,42 +293,25 @@ def connect_blocking(progress=lambda msg: None):
 
     port = urlparse(s["url"]).port or 8765
     name = s["instance"]
-    if name and not info and not mismatch:
-        # Fast path: the GPU is known, so just open the tunnel and check.
+    if not info and not mismatch:
+        # Fast path: open the tunnel and check.
         progress("Connecting to your GPU…")
         _forward.start(name, port)
         info, mismatch = _poll_health(10)
         if info and info.get("version") == local_version:
             return True, _ok(info)
 
-    # Which Brev instance? Use the saved one, or find it automatically.
+    # Not answering: ask Brev whether the GPU is on, for a clear message.
     found = list_instances()
     if isinstance(found, str):
         return False, found
-    statuses = dict(found)
-    if not name or name not in statuses:
-        if len(found) == 1:
-            name = found[0][0]
-            cloud.set_value("ai/brev_instance", name)
-        elif not found:
-            return False, ("Your Brev account has no GPU instances yet. Create one at "
-                           "brev.nvidia.com (any NVIDIA GPU).")
-        else:
-            return False, ("Your Brev account has several instances. Choose one in AI "
-                           "Settings: " + ", ".join(n for n, _ in found))
-    status = statuses.get(name, "NOT_FOUND")
-
+    status = dict(found).get(name, "NOT_FOUND")
+    if status == "NOT_FOUND":
+        return False, (f"No Brev instance named '{name}' in your Brev account "
+                       "(was it deleted or renamed?).")
     if status != "RUNNING":
-        if not s["autostart"]:
-            return False, (f"Your GPU '{name}' is {status.lower()}, so AI runs on this computer. "
-                           "Click Start GPU in AI Settings to use it.")
-        progress(f"Starting your GPU '{name}' (1–3 minutes)…")
-        start_instance(name)
-        deadline = time.time() + 900
-        while time.time() < deadline and instance_status(name) != "RUNNING":
-            time.sleep(10)
-        if instance_status(name) != "RUNNING":
-            return False, f"Your GPU '{name}' didn't start. Check it at brev.nvidia.com."
+        return False, (f"Your GPU '{name}' is {status.lower()}, so AI runs on this computer. "
+                       "Start it in the Brev dashboard, then click Try Connecting Again.")
 
     if not info and not mismatch:
         progress("Connecting to your GPU…")
@@ -456,39 +422,6 @@ class CloudConnection(QObject):
         self._run(connect_blocking, "Connecting to your NVIDIA GPU…")
 
     retry = start
-
-    def start_gpu(self):
-        """Turn the Brev instance on, then connect (and set it up if needed)."""
-        def job(progress):
-            s = cloud.get_settings()
-            found = list_instances()
-            if isinstance(found, str):
-                return False, found
-            name = s["instance"] or (found[0][0] if len(found) == 1 else "")
-            if not name:
-                return False, "Choose your Brev instance in AI Settings first."
-            cloud.set_value("ai/brev_instance", name)
-            if dict(found).get(name) != "RUNNING":
-                progress(f"Starting your GPU '{name}' (1–3 minutes)…")
-                start_instance(name)
-            return connect_blocking(progress)
-        self._run(job, "Starting your GPU…")
-
-    def stop_gpu(self, wait=False):
-        """Turn the Brev instance off (it bills by the hour while running)."""
-        name = cloud.get_settings()["instance"]
-        _forward.stop()
-        if not name:
-            return
-
-        def job(progress):
-            ok = stop_instance(name)
-            return False, (f"Your GPU '{name}' is stopped (no hourly charges). AI runs on this "
-                           "computer." if ok else f"Couldn't stop '{name}'. Check brev.nvidia.com.")
-        if wait:
-            stop_instance(name)
-        else:
-            self._run(job, f"Stopping your GPU '{name}'…")
 
     def _done(self, ok, message):
         self._busy = False

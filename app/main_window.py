@@ -1330,11 +1330,6 @@ use <b>Export</b> to save a finished copy, or <b>Save Project</b> to keep workin
 
     def closeEvent(self, e):
         if self._confirm_discard():
-            if ai_cloud.prefers_cloud() and ai_cloud.get_settings()["autostop"]:
-                self.hide()
-                QApplication.setOverrideCursor(Qt.WaitCursor)
-                self.cloud_conn.stop_gpu(wait=True)   # stop hourly billing
-                QApplication.restoreOverrideCursor()
             self.cloud_conn.stop()
             QThreadPool.globalInstance().waitForDone(5000)
             e.accept()

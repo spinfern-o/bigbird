@@ -13,6 +13,10 @@ from PySide6.QtCore import QSettings
 
 from . import tasks
 
+# The team's Brev GPU instance. Names don't change when it's stopped/started; only if it's
+# deleted and recreated under another name would this need updating.
+BREV_INSTANCE = "bigbird-gpu-dev"
+
 UPLOAD_MAX = 2048   # the models work at ~1024 px, so bigger uploads only waste time
 
 
@@ -31,21 +35,18 @@ def get_settings():
     return {"mode": s.value("ai/mode", "local"),
             "url": s.value("ai/url", "http://localhost:8765"),
             "token": s.value("ai/token", ""),
-            "instance": s.value("ai/brev_instance", ""),
-            "autostart": s.value("ai/autostart", "false") in (True, "true"),
-            "autostop": s.value("ai/autostop", "false") in (True, "true")}
+            "instance": BREV_INSTANCE}
 
 
 def set_value(key, value):
     _settings().setValue(key, value)
 
 
-def save_settings(mode, url, token, instance):
+def save_settings(mode, url, token):
     s = _settings()
     s.setValue("ai/mode", mode)
     s.setValue("ai/url", url.rstrip("/"))
     s.setValue("ai/token", token)
-    s.setValue("ai/brev_instance", instance)
 
 
 _state = {"connected": False}

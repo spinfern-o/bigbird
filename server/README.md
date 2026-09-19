@@ -14,18 +14,21 @@ PhotoForge (your PC) ──localhost:8765──▶ brev port-forward ──▶ B
 You only need to:
 1. Create a GPU instance at [brev.nvidia.com](https://brev.nvidia.com) (any NVIDIA GPU).
 2. On your PC, install the Brev CLI (on Windows, inside Ubuntu/WSL) and run `brev login` once.
-3. In PhotoForge choose **AI → AI Settings… → My NVIDIA cloud GPU (Brev)** and click **Save**
-   (or **Start GPU**).
+3. In PhotoForge choose **AI → AI Settings… → My NVIDIA cloud GPU (Brev)** and click **Save**.
+
+The instance name is set in `app/ai/cloud.py` (`BREV_INSTANCE = "bigbird-gpu-dev"`). Brev
+names don't change when an instance is stopped or started; update it only if the instance
+is deleted and recreated under another name.
 
 PhotoForge then does everything else by itself:
-- finds your instance and creates the access token
+- creates the access token
 - copies this server to the GPU over SSH, installs it (about 5 minutes the first time) and
   makes it start at boot
 - keeps it updated whenever PhotoForge's AI code changes
 - connects automatically whenever you open the app and the GPU is on
 
-Optional checkboxes in AI Settings start the GPU when PhotoForge opens and stop it when
-PhotoForge closes.
+Start and stop the GPU yourself in the Brev dashboard. If PhotoForge was opened before
+the GPU was on, click **Try Connecting Again** in AI Settings.
 
 The manual steps below are only for reference or troubleshooting.
 

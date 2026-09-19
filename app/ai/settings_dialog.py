@@ -2,18 +2,18 @@
 import secrets
 
 from PySide6.QtGui import QGuiApplication
-from PySide6.QtWidgets import (QButtonGroup, QCheckBox, QDialog, QDialogButtonBox, QFormLayout,
+from PySide6.QtWidgets import (QButtonGroup, QDialog, QDialogButtonBox, QFormLayout,
                                QHBoxLayout, QLabel, QLineEdit, QPushButton, QRadioButton,
                                QVBoxLayout)
 
 from . import cloud
 
 HELP = (
-    "<b>It's automatic.</b> When PhotoForge opens and your GPU is on, it connects by itself. "
-    "The first time, it also sets up the GPU for you (about 5 minutes). If the GPU is off, "
-    "heavy AI runs on this computer.<br><br>"
+    "<b>It's automatic.</b> Start the GPU in the Brev dashboard; when PhotoForge opens (or you "
+    "click Try Connecting Again) it connects by itself, and sets up the GPU the first time "
+    "(about 5 minutes). If the GPU is off, heavy AI runs on this computer.<br><br>"
     "Needs the Brev CLI in Ubuntu (WSL) and <code>brev login</code> once. Brev bills by the "
-    "hour while the GPU is on, so stop it when you're done.")
+    "hour while the GPU is on, so stop it in the dashboard when you're done.")
 
 STATE_ICON = {"connected": "✓", "connecting": "…", "offline": "✗", "local": "•"}
 
@@ -47,34 +47,18 @@ class AISettingsDialog(QDialog):
         self.retry_btn = QPushButton("Try Connecting Again")
         self.retry_btn.setToolTip("Connect to your GPU now (and set it up if needed)")
         self.retry_btn.clicked.connect(self._retry)
-        self.start_btn = QPushButton("▶ Start GPU")
-        self.start_btn.setToolTip("Turn your Brev GPU on (billed by the hour) and connect")
-        self.start_btn.clicked.connect(self._start_gpu)
-        self.stop_btn = QPushButton("■ Stop GPU")
-        self.stop_btn.setToolTip("Turn your Brev GPU off so it stops billing")
-        self.stop_btn.clicked.connect(lambda: self.conn.stop_gpu())
-        for b in (self.retry_btn, self.start_btn, self.stop_btn):
-            row.addWidget(b)
+        row.addWidget(self.retry_btn)
+        gpu = QLabel(f"GPU instance: <b>{cloud.BREV_INSTANCE}</b>")
+        gpu.setObjectName("hintLabel")
+        row.addWidget(gpu)
         row.addStretch(1)
         lay.addLayout(row)
-
-        self.autostart = QCheckBox("Start my GPU automatically when PhotoForge opens "
-                                   "(billed by the hour)")
-        self.autostart.setChecked(s["autostart"])
-        self.autostop = QCheckBox("Stop my GPU when I close PhotoForge (recommended if only "
-                                  "you use it)")
-        self.autostop.setChecked(s["autostop"])
-        lay.addWidget(self.autostart)
-        lay.addWidget(self.autostop)
 
         # advanced (filled in automatically)
         adv = QLabel("<b>Advanced</b> (filled in automatically)")
         adv.setObjectName("hintLabel")
         lay.addWidget(adv)
         form = QFormLayout()
-        self.instance = QLineEdit(s["instance"])
-        self.instance.setPlaceholderText("found automatically")
-        form.addRow("Brev instance", self.instance)
         self.url = QLineEdit(s["url"])
         form.addRow("Server address", self.url)
         self.token = QLineEdit(s["token"])
@@ -107,14 +91,8 @@ class AISettingsDialog(QDialog):
 
     def _show_state(self, state, message):
         self.status.setText(f"{STATE_ICON.get(state, '')} {message}")
-        busy = state == "connecting"
-        for b in (self.retry_btn, self.start_btn, self.stop_btn):
-            b.setEnabled(not busy)
-        # the instance name may have been found automatically
-        found = cloud.get_settings()["instance"]
-        if found and not self.instance.text():
-            self.instance.setText(found)
-        if not self.token.text():
+        self.retry_btn.setEnabled(state != "connecting")
+        if not self.token.text():  # created automatically on first connect
             self.token.setText(cloud.get_settings()["token"])
 
     def _new_token(self):
@@ -125,17 +103,11 @@ class AISettingsDialog(QDialog):
         if cloud_mode:
             self.remote.setChecked(True)
         cloud.save_settings("cloud" if self.remote.isChecked() else "local", self.url.text(),
-                            self.token.text(), self.instance.text().strip())
-        cloud.set_value("ai/autostart", self.autostart.isChecked())
-        cloud.set_value("ai/autostop", self.autostop.isChecked())
+                            self.token.text())
 
     def _retry(self):
         self._store(cloud_mode=True)
         self.conn.retry()
-
-    def _start_gpu(self):
-        self._store(cloud_mode=True)
-        self.conn.start_gpu()
 
     def _save(self):
         self._store()
