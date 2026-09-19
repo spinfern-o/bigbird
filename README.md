@@ -127,6 +127,9 @@ only an accelerator for the same approved local models. Generative editing/fill 
 the signed-in `phrame.tech/api/edit` → NVIDIA NIM path described above.
 Setup and troubleshooting: [server/README.md](server/README.md).
 
+**App persistence**: PhotoForge remembers the last local folder, up to 10 recent files
+(File → Open Recent), and the window size/position with Qt QSettings.
+
 **Beginner help**: welcome screen, plain-English tooltips on every control,
 status-bar hints for each tool, Quick Start guide (F1), double-click a slider's name to reset.
 
