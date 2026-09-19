@@ -5,7 +5,14 @@ import Link from "next/link"
 import { useState } from "react"
 
 function signUpErrorMessage(error: unknown): string {
-  const { code, status } = (error ?? {}) as { code?: string; status?: number }
+  const { code, status, message } = (error ?? {}) as { code?: string; status?: number; message?: string }
+  if (
+    code === "email_address_invalid" ||
+    code === "email_address_not_authorized" ||
+    message?.toLowerCase().includes("invalid email")
+  ) {
+    return "Please choose a valid email address."
+  }
   if (code === "weak_password") {
     return "Please choose a stronger password (at least 6 characters)."
   }
