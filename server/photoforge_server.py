@@ -90,14 +90,9 @@ def ep_sam_decode(req):
     return {"scores": scores.astype(np.float32), "logits": logits.astype(np.float16)}
 
 
-def ep_fill(req):
-    return {"image": tasks.lama_fill(req["image"], req["mask"])}
-
-
 ROUTES = {"/remove_background": ("birefnet_lite", ep_remove_background),
           "/sam/encode": ("sam2", ep_sam_encode),
-          "/sam/decode": ("sam2", ep_sam_decode),
-          "/fill": ("lama", ep_fill)}
+          "/sam/decode": ("sam2", ep_sam_decode)}
 
 
 class Handler(BaseHTTPRequestHandler):
