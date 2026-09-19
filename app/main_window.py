@@ -16,6 +16,8 @@ from .document import Document
 from .icons import tool_icon
 from .panels import AdjustPanel, ColorButton, LayersPanel, NoWheelSlider
 from .renderer import Renderer
+from .selection import apply_masked
+from .selection_actions import SELECT_TOOL_INFO, SelectionActions
 from .ai import models as ai_models, tasks as ai_tasks
 from .ai.outline import OutlineEditor, solidify, trace_mask
 from .ai.select import ObjectSelector
@@ -36,6 +38,8 @@ TOOLS = [
     ("ai_remove", "Remove", "R", "Select to Remove (R): click the objects you want gone and the "
                                  "AI finds their outlines. Press Enter to remove them."),
 ]
+TOOLS[1:1] = SELECT_TOOL_INFO[:3]         # Marquee, Lasso, Wand after Pan
+TOOLS.insert(TOOLS.index(next(t for t in TOOLS if t[0] == "eraser")) + 1, SELECT_TOOL_INFO[3])
 TOOL_HINTS = {k: tip for k, _, _, tip in TOOLS}
 TOOL_HINTS["ai_refine"] = ("Refine Outline: the bright area is kept, the darkened area is "
                            "removed. Drag dots, click a line to add a dot, right-click a dot to "
@@ -98,7 +102,7 @@ class WelcomeWidget(QWidget):
         lay.addStretch(3)
 
 
-class MainWindow(QMainWindow):
+class MainWindow(SelectionActions, QMainWindow):
     def __init__(self):
         super().__init__()
         self.resize(1440, 900)
@@ -142,6 +146,7 @@ class MainWindow(QMainWindow):
         self._build_statusbar()
         self._connect()
         self._build_ai()
+        self._build_selection()
         self.set_document(None)
         self.select_tool("hand")
 
@@ -295,6 +300,7 @@ class MainWindow(QMainWindow):
         self.opt_title.setObjectName("optTitle")
         self.opts.addWidget(self.opt_title)
         self.opt_groups = {}
+        self.opt_group_tools = {}  # extra option groups -> tools that show them
 
         def group(name):
             w = QWidget()
@@ -461,6 +467,11 @@ class MainWindow(QMainWindow):
                                   "Scroll to zoom, hold Space and drag to pan.")
 
     def _doc_changed(self, kind):
+        if kind == "selection":
+            self._selection_changed()
+            return
+        if kind == "all":
+            self._selection_changed(from_tool=False)
         ed = self.canvas.outline
         if ed is not None and (ed.doc_w, ed.doc_h) != (self.doc.width, self.doc.height):
             self.select_tool("hand")
@@ -519,16 +530,21 @@ class MainWindow(QMainWindow):
                 "info": key in ("hand", "move", "text", "eyedropper"),
                 "outline": key == "ai_refine", "select": key == "ai_remove"}
         for name, act in self.opt_groups.items():
-            act.setVisible(show[name])
+            act.setVisible(show[name] if name in show else key in self.opt_group_tools.get(name, ()))
         self.opt_info.setText(TOOL_HINTS[key].split(": ", 1)[1])
         self.hint_lbl.setText(TOOL_HINTS[key])
         if key == "crop":
             self.canvas.setFocus()
         if key == "ai_remove" and self.doc:
             self._start_select()
+        self._on_tool_selected(key)
 
     def _bump_size(self, f):
         s = self.state.brush_size
+        if self.state.tool == "heal":
+            new = max(s + 1, round(s * f)) if f > 1 else min(s - 1, round(s * f))
+            self.heal_size.setValue(max(2, min(400, new)))
+            return
         new = max(s + 1, round(s * f)) if f > 1 else min(s - 1, round(s * f))
         self.size_slider.setValue(max(1, min(1000, new)))
 
@@ -653,7 +669,10 @@ class MainWindow(QMainWindow):
         layer = self.doc.active_layer()
         QApplication.setOverrideCursor(Qt.WaitCursor)
         try:
-            self.doc.set_layer_pixels(fn(layer.pixels), label)
+            new = fn(layer.pixels)
+            if self.doc.selection is not None:
+                new = apply_masked(layer.pixels, new, self.doc.selection)
+            self.doc.set_layer_pixels(new, label)
         finally:
             QApplication.restoreOverrideCursor()
         self.hint_lbl.setText(f"{label} applied to layer '{layer.name}'. Ctrl+Z to undo.")
@@ -859,7 +878,7 @@ class MainWindow(QMainWindow):
         p.removeObject.connect(lambda: self.select_tool("ai_remove"))
         p.refineRemoval.connect(self.ai_refine_removal)
         self.canvas.outlineApply.connect(self._outline_apply)
-        self.canvas.outlineCancel.connect(lambda: self.select_tool("hand"))
+        self.canvas.outlineCancel.connect(self._outline_cancel)
         self._outline_mode = None
         self._removal = None
 
@@ -947,13 +966,25 @@ class MainWindow(QMainWindow):
         self.canvas.set_backdrop(None)
         self._outline_mode = None
 
+    def _outline_cancel(self):
+        if self._outline_mode == "seltool":
+            return  # Esc with a selection tool does nothing special (Ctrl+D deselects)
+        self.select_tool("hand")
+
     def _outline_apply(self):
         mode = self._outline_mode
+        if mode == "seltool":
+            return
         if mode == "ai_select":
             self._remove_selected()
             return
         ed = self.canvas.outline
         if ed is None or not ed.has_shape():
+            return
+        if mode == "sel_refine":
+            self.doc.set_selection(ed.result_mask(self.feather.value()), "Refine selection edge")
+            self.select_tool("lasso")
+            self.hint_lbl.setText("Selection edge refined. Ctrl+Z to undo.")
             return
         if mode == "ai_refine_removal":
             src, index = self._removal
@@ -985,23 +1016,26 @@ class MainWindow(QMainWindow):
         ed.on_change = self._outline_changed
         self.canvas.outline = ed
         self._outline_mode = mode
-        self.crisp_chk.setVisible(not removal)
+        self.crisp_chk.setVisible(mode == "ai_refine")
         full = backdrop.copy()
         full[..., 3] = 255
         self.canvas.set_backdrop(imageio.to_qimage(full))
         spin = self.ai_panel.removal_points if removal else self.ai_panel.points
         ed.load_mask(ref_mask, spin.value())
-        self.opt_title.setText("  Refine Removal  " if removal else "  Refine Outline  ")
+        self.opt_title.setText({"ai_refine_removal": "  Refine Removal  ",
+                                "sel_refine": "  Refine Selection Edge  "}.get(
+            mode, "  Refine Outline  "))
         self.canvas.setFocus()
         self._outline_changed()
         return ed
 
     def _outline_changed(self):
         ed = self.canvas.outline
-        if ed is None or self._outline_mode == "ai_select":
+        if ed is None or self._outline_mode in ("ai_select", "seltool"):
             return
         n = ed.point_count()
-        what = "removed (darkened red)" if self._outline_mode == "ai_refine_removal" else "kept"
+        what = {"ai_refine_removal": "removed (darkened red)",
+                "sel_refine": "selected"}.get(self._outline_mode, "kept")
         self.outline_info.setText(f"{n} dots. Area {what}. Drag dots, click a line to add one, "
                                   "right-click to delete")
         self.outline_apply_btn.setEnabled(ed.has_shape())
@@ -1010,7 +1044,7 @@ class MainWindow(QMainWindow):
         self.points_spin.blockSignals(False)
 
     def _points_changed(self, n):
-        if self.canvas.outline is not None and self._outline_mode != "ai_select":
+        if self.canvas.outline is not None and self._outline_mode not in ("ai_select", "seltool"):
             self.canvas.outline.set_point_count(n)
             self.canvas.setFocus()
 
