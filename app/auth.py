@@ -101,6 +101,11 @@ class AuthManager(QObject):
     def email(self) -> str | None:
         return (self._session or {}).get("email")
 
+    @property
+    def access_token(self) -> str | None:
+        """The token cloud features send to prove who's asking (app/ai/base.py)."""
+        return (self._session or {}).get("access_token")
+
     def _load_saved(self):
         try:
             if _SESSION_PATH.exists():

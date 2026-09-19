@@ -41,6 +41,18 @@ Vercel project set **Root Directory = `web`** and **Framework Preset = Next.js**
 The Supabase environment variables (`NEXT_PUBLIC_SUPABASE_URL`,
 `NEXT_PUBLIC_SUPABASE_ANON_KEY`) are provided by the Supabase integration.
 
+The same Vercel deployment also hosts the **cloud AI proxy** at `/api/edit`
+(`web/app/api/edit/route.ts`), which holds the NVIDIA key so it never ships
+inside the desktop app. Set these in the Vercel project:
+
+| Variable | Notes |
+|---|---|
+| `NVIDIA_API_KEY` | **Never** prefix with `NEXT_PUBLIC_` -- that would inline it into the browser bundle and publish it. |
+| `NIM_ENDPOINT` | Full NVIDIA NIM invoke URL; confirm the current path on build.nvidia.com. |
+
+Point the desktop app at it with `PHOTOFORGE_CLOUD_URL`
+(default `http://localhost:3000/api/edit` for development).
+
 ## Features
 
 **Develop (Lightroom-like, non-destructive)**
