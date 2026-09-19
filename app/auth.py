@@ -22,6 +22,7 @@ import os
 import secrets
 import threading
 import time
+import tempfile
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlencode, urlparse
@@ -36,6 +37,42 @@ DEFAULT_WEB_URL = "https://www.phrame.tech"
 LOGIN_TIMEOUT_SECONDS = 300
 
 _SESSION_PATH = Path.home() / ".photoforge" / "session.json"
+
+
+def _secure_write_json(path: Path, data) -> None:
+    """Atomically write JSON using a user-only temporary file."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        os.chmod(path.parent, 0o700)
+    except OSError:
+        pass
+
+    fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=".session-", suffix=".tmp")
+    try:
+        # mkstemp creates a private file; keep the explicit chmod for platforms
+        # that support POSIX permissions.
+        try:
+            os.chmod(tmp, 0o600)
+        except OSError:
+            pass
+        with os.fdopen(fd, "w") as handle:
+            json.dump(data, handle)
+        os.replace(tmp, path)
+        try:
+            os.chmod(path, 0o600)
+        except OSError:
+            pass
+    except BaseException:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
 
 _SUCCESS_HTML = """<!doctype html>
 <html><head><meta charset="utf-8"><title>PhotoForge</title>
@@ -130,12 +167,7 @@ class AuthManager(QObject):
 
     def _save(self):
         try:
-            _SESSION_PATH.parent.mkdir(parents=True, exist_ok=True)
-            _SESSION_PATH.write_text(json.dumps(self._session or {}))
-            try:
-                os.chmod(_SESSION_PATH, 0o600)
-            except OSError:
-                pass
+            _secure_write_json(_SESSION_PATH, self._session or {})
         except OSError:
             pass
 
@@ -191,7 +223,7 @@ class AuthManager(QObject):
 
     def _handle_callback(self, params: dict) -> tuple[bool, str]:
         """Called from the HTTP server thread when the browser redirects back."""
-        if not self._state or params.get("state") != self._state:
+        if not self._state or not secrets.compare_digest(params.get("state", ""), self._state):
             self._shutdown_server()
             return False, "This sign-in request has expired. Please try again from PhotoForge."
 
