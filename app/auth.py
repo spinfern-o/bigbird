@@ -10,9 +10,9 @@ Uses the standard native-app "loopback redirect" flow:
   4. This module validates ``state``, stores the session locally, and notifies
      the UI via the ``authChanged`` Qt signal.
 
-The web page lives in ``web/`` and is deployed separately. Point the app at it
-with the ``BIGBIRD_WEB_URL`` environment variable; it defaults to the local dev
-server so the flow can be exercised end to end during development.
+The web page lives in ``web/`` and is deployed separately. Production defaults
+to ``https://www.phrame.tech``; set ``BIGBIRD_WEB_URL`` to override it (for
+example, ``http://localhost:3000`` during local web development).
 """
 
 from __future__ import annotations
@@ -29,8 +29,8 @@ from urllib.parse import parse_qs, urlencode, urlparse
 from PySide6.QtCore import QObject, QUrl, Signal
 
 # Where the account web page is hosted. Override in production, e.g.
-#   export BIGBIRD_WEB_URL="https://your-app.vercel.app"
-DEFAULT_WEB_URL = "https://phrame.tech"
+#   export BIGBIRD_WEB_URL="http://localhost:3000"  # local web development
+DEFAULT_WEB_URL = "https://www.phrame.tech"
 
 # Abandon a pending sign-in if the browser never comes back.
 LOGIN_TIMEOUT_SECONDS = 300
@@ -102,14 +102,20 @@ class AuthManager(QObject):
         return (self._session or {}).get("email")
 
     @property
+    def access_token(self) -> str | None:
+        """The token cloud features send to prove who's asking (app/ai/base.py)."""
+        return (self._session or {}).get("access_token")
+
+    @property
     def session(self) -> dict:
+        """A copy of the current session for authenticated cloud features."""
         return dict(self._session or {})
 
     def update_session(self, **fields):
-        """Store a refreshed token (used by the cloud projects API)."""
+        """Persist refreshed Supabase session fields without exposing internal state."""
         if self._session is None:
             return
-        self._session.update({k: v for k, v in fields.items() if v})
+        self._session.update({k: v for k, v in fields.items() if v not in (None, "")})
         self._session["saved_at"] = int(time.time())
         self._save()
 
