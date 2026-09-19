@@ -10,9 +10,9 @@ Uses the standard native-app "loopback redirect" flow:
   4. This module validates ``state``, stores the session locally, and notifies
      the UI via the ``authChanged`` Qt signal.
 
-The web page lives in ``web/`` and is deployed separately. Point the app at it
-with the ``BIGBIRD_WEB_URL`` environment variable; it defaults to the local dev
-server so the flow can be exercised end to end during development.
+The web page lives in ``web/`` and is deployed separately. Production defaults
+to ``https://www.phrame.tech``; set ``BIGBIRD_WEB_URL`` to override it (for
+example, ``http://localhost:3000`` during local web development).
 """
 
 from __future__ import annotations
