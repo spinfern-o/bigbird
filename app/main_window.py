@@ -11,6 +11,8 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDialog, QDoc
 from . import adjustments, filters, imageio
 from .auth import AuthManager
 from .canvas import Canvas, ToolState
+from .cloud_dialogs import CloudProjectsDialog, run_cloud
+from . import cloud_projects
 from .dialogs import ExportDialog, NewImageDialog, ResizeDialog, TextDialog
 from .document import Document
 from .icons import tool_icon
@@ -173,6 +175,10 @@ class MainWindow(SelectionActions, QMainWindow):
         self.a_save = A("Save Project", self.save_project, "Ctrl+S",
                         "Save everything (layers + edits) so you can keep working later")
         self.a_save_as = A("Save Project As…", lambda: self.save_project(True), "Ctrl+Shift+S")
+        self.a_cloud_save = A("Save to Cloud…", self.cloud_save, "Ctrl+Alt+S",
+                              "Save this project to your phrame.tech account")
+        self.a_cloud_open = A("Open from Cloud…", self.cloud_open, "Ctrl+Alt+O",
+                              "Open a project saved in your phrame.tech account")
         self.a_export = A("Export Image…", self.export_image, "Ctrl+E",
                           "Save a finished JPG/PNG to share or print")
         self.a_quit = A("Exit", self.close, "Ctrl+Q")
@@ -202,7 +208,8 @@ class MainWindow(SelectionActions, QMainWindow):
         self.a_tips = A("Quick Start Guide", self.show_tips, "F1")
         self.a_keys = A("Keyboard Shortcuts", self.show_shortcuts)
 
-        self.doc_actions = [self.a_place, self.a_save, self.a_save_as, self.a_export, self.a_reset,
+        self.doc_actions = [self.a_place, self.a_save, self.a_save_as, self.a_cloud_save,
+                            self.a_export, self.a_reset,
                             self.a_auto, self.a_compare, self.a_fit, self.a_100, self.a_zin,
                             self.a_zout, self.a_rot_l, self.a_rot_r, self.a_flip_h, self.a_flip_v,
                             self.a_resize, self.a_crop, self.a_flatten, self.a_layer_new,
@@ -233,7 +240,8 @@ class MainWindow(SelectionActions, QMainWindow):
     def _build_menus(self):
         mb = self.menuBar()
         m = mb.addMenu("&File")
-        for a in (self.a_new, self.a_open, self.a_place, None, self.a_save, self.a_save_as,
+        for a in (self.a_new, self.a_open, self.a_place, None, self.a_cloud_open,
+                  self.a_cloud_save, None, self.a_save, self.a_save_as,
                   self.a_export, None, self.a_quit):
             m.addSeparator() if a is None else m.addAction(a)
         m = mb.addMenu("&Edit")
@@ -828,6 +836,100 @@ class MainWindow(SelectionActions, QMainWindow):
         self._update_labels()
         self.hint_lbl.setText(f"Project saved to {path}")
         return True
+
+    # ------------------------------------------------------------------ cloud projects
+    def _cloud_api(self):
+        """Return the signed-in cloud API, or start login and ask the user to retry."""
+        if not self.auth.is_logged_in:
+            if QMessageBox.question(
+                self, "Cloud projects",
+                "Cloud projects are saved to your phrame.tech account.\n\nLog in now?"
+            ) == QMessageBox.Yes:
+                self.auth.login()
+            return None
+        return cloud_projects.Api(self.auth)
+
+    def cloud_save(self):
+        api = self._cloud_api()
+        if api is None or not self.doc:
+            return
+
+        default = os.path.splitext(getattr(self.doc, "display_name", "Untitled"))[0]
+        name, ok = QInputDialog.getText(self, "Save to Cloud", "Project name:", text=default)
+        name = name.strip()
+        if not ok or not name:
+            return
+
+        doc = self.doc
+        project_id = getattr(doc, "cloud_id", None)
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            data = cloud_projects.project_bytes(doc)
+            thumb = cloud_projects.thumbnail_jpeg(doc)
+        except Exception as e:
+            QMessageBox.warning(self, "Save to Cloud", f"Couldn't prepare this project.\n\n{e}")
+            return
+        finally:
+            QApplication.restoreOverrideCursor()
+
+        def done(row):
+            doc.cloud_id = row.get("id")
+            doc.display_name = name
+            doc.dirty = False
+            self._update_labels()
+            self.hint_lbl.setText(
+                f"Saved '{name}' to your phrame.tech account "
+                f"({len(data) / 1048576:.1f} MB)."
+            )
+
+        run_cloud(
+            self,
+            "Save to Cloud",
+            f"Uploading '{name}'…",
+            lambda: api.save_project(name, data, thumb, doc.width, doc.height, project_id),
+            done,
+        )
+
+    def cloud_open(self):
+        api = self._cloud_api()
+        if api is None:
+            return
+
+        def show(rows):
+            dlg = CloudProjectsDialog(self, api, rows)
+            dlg.load_thumbs()
+            if dlg.exec() == QDialog.Accepted and dlg.chosen:
+                self._cloud_download(api, dlg.chosen)
+
+        run_cloud(self, "Open from Cloud", "Loading your projects…", api.list_projects, show)
+
+    def _cloud_download(self, api, row):
+        if not self._confirm_discard():
+            return
+
+        def done(data):
+            import io
+            try:
+                doc = imageio.load_project(io.BytesIO(data))
+            except Exception as e:
+                QMessageBox.warning(
+                    self,
+                    "Open from Cloud",
+                    f"That project couldn't be opened.\n\n{e}",
+                )
+                return
+            doc.display_name = row["name"]
+            doc.cloud_id = row["id"]
+            self.set_document(doc)
+            self.hint_lbl.setText(f"Opened '{row['name']}' from your phrame.tech account.")
+
+        run_cloud(
+            self,
+            "Open from Cloud",
+            f"Downloading '{row['name']}'…",
+            lambda: api.download_project(row["file_path"]),
+            done,
+        )
 
     def export_image(self):
         dlg = ExportDialog(self.doc.width, self.doc.height, self)
