@@ -28,6 +28,8 @@ from urllib.parse import parse_qs, urlencode, urlparse
 
 from PySide6.QtCore import QObject, QUrl, Signal
 
+from . import state
+
 # Where the account web page is hosted. Override in production, e.g.
 #   export BIGBIRD_WEB_URL="https://your-app.vercel.app"
 DEFAULT_WEB_URL = "http://localhost:3000"
@@ -90,6 +92,7 @@ class AuthManager(QObject):
         self._server: HTTPServer | None = None
         self._state: str | None = None
         self._timeout_timer: threading.Timer | None = None
+        self._guest = False
         self._load_saved()
 
     # ---------------------------------------------------------------- session
@@ -98,26 +101,62 @@ class AuthManager(QObject):
         return self._session is not None
 
     @property
+    def is_guest(self) -> bool:
+        """True when the user chose "Continue as guest" instead of signing in."""
+        return self._guest
+
+    @property
     def email(self) -> str | None:
         return (self._session or {}).get("email")
+
+    def continue_as_guest(self):
+        """Use the app without an account. Nothing is written to disk."""
+        self._guest = True
+
+    @staticmethod
+    def _is_expired(data: dict) -> bool:
+        """Has the stored access token passed its expiry?
+
+        Supabase reports ``expires_at`` as a unix timestamp. A session with no
+        expiry recorded is treated as still valid — older saved sessions
+        predate this field and locking those users out would be worse than
+        letting the first API call fail.
+        """
+        raw = data.get("expires_at")
+        if raw in (None, ""):
+            return False
+        try:
+            return float(raw) <= time.time()
+        except (TypeError, ValueError):
+            return False
 
     def _load_saved(self):
         try:
             if _SESSION_PATH.exists():
                 data = json.loads(_SESSION_PATH.read_text())
-                if data.get("access_token") and data.get("refresh_token"):
-                    self._session = data
+                if not (data.get("access_token") and data.get("refresh_token")):
+                    return
+                if self._is_expired(data):
+                    # The desktop app has no Supabase credentials of its own, so
+                    # it cannot redeem the refresh token; ask for a fresh
+                    # sign-in rather than showing a signed-in state that fails
+                    # on the first real request.
+                    self._discard_session_file()
+                    return
+                self._session = data
         except (OSError, ValueError):
             self._session = None
 
+    @staticmethod
+    def _discard_session_file():
+        try:
+            _SESSION_PATH.unlink(missing_ok=True)
+        except OSError:
+            pass
+
     def _save(self):
         try:
-            _SESSION_PATH.parent.mkdir(parents=True, exist_ok=True)
-            _SESSION_PATH.write_text(json.dumps(self._session or {}))
-            try:
-                os.chmod(_SESSION_PATH, 0o600)
-            except OSError:
-                pass
+            state.secure_write_json(_SESSION_PATH, self._session or {})
         except OSError:
             pass
 
@@ -173,7 +212,9 @@ class AuthManager(QObject):
 
     def _handle_callback(self, params: dict) -> tuple[bool, str]:
         """Called from the HTTP server thread when the browser redirects back."""
-        if not self._state or params.get("state") != self._state:
+        if not self._state or not secrets.compare_digest(
+            params.get("state", ""), self._state
+        ):
             self._shutdown_server()
             return False, "This sign-in request has expired. Please try again from PhotoForge."
 
@@ -190,6 +231,7 @@ class AuthManager(QObject):
             "email": params.get("email", ""),
             "saved_at": int(time.time()),
         }
+        self._guest = False  # signing in supersedes a guest session
         self._save()
         self._shutdown_server()
         # Qt delivers this queued to the main thread since AuthManager lives there.
@@ -199,9 +241,6 @@ class AuthManager(QObject):
     # ----------------------------------------------------------------- logout
     def logout(self):
         self._session = None
-        try:
-            if _SESSION_PATH.exists():
-                _SESSION_PATH.unlink()
-        except OSError:
-            pass
+        self._guest = True  # stay usable; the user just isn't signed in anymore
+        self._discard_session_file()
         self.authChanged.emit(False)

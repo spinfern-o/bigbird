@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDialog, QDoc
                                QSizePolicy, QSlider, QSpinBox, QStackedWidget, QTabWidget, QToolBar, QVBoxLayout, QWidget)
 
 from . import adjustments, filters, imageio
+from . import state as app_state
 from .auth import AuthManager
 from .canvas import Canvas, ToolState
 from .dialogs import ExportDialog, NewImageDialog, ResizeDialog, TextDialog
@@ -99,7 +100,12 @@ class WelcomeWidget(QWidget):
 
 
 class MainWindow(QMainWindow):
-    def __init__(self):
+    def __init__(self, auth=None, store=None):
+        # `auth` and `store` come from the start-up login screen (see main.py).
+        # They default to a signed-out session with guest-style storage so the
+        # window can still be constructed on its own, e.g. in tests.
+        self._initial_auth = auth
+        self._initial_store = store
         super().__init__()
         self.resize(1440, 900)
         self.setAcceptDrops(True)
@@ -133,7 +139,9 @@ class MainWindow(QMainWindow):
         self._thumb_timer = QTimer(self, singleShot=True, interval=400)
         self._thumb_timer.timeout.connect(self._update_preset_thumbs)
 
-        self.auth = AuthManager(self)
+        self.auth = self._initial_auth or AuthManager(self)
+        self.auth.setParent(self)
+        self.store = self._initial_store or app_state.EphemeralStore()
         self.auth.authChanged.connect(self._update_auth_ui)
 
         self._build_actions()
@@ -380,10 +388,20 @@ class MainWindow(QMainWindow):
     def _update_auth_ui(self, logged_in):
         if logged_in:
             email = self.auth.email or "Account"
+            if not getattr(self.store, "is_persistent", False):
+                # Signed in partway through a guest session: carry everything
+                # done as a guest into the saved store rather than dropping it.
+                self.store = app_state.promote(self.store)
             self.login_btn.setText(f"●  {email}")
             self.login_btn.setToolTip(f"Signed in as {email}. Click to log out.")
-            self.statusBar().showMessage(f"Signed in as {email}.", 6000)
+            self.statusBar().showMessage(
+                f"Signed in as {email}. PhotoForge will remember your recent "
+                "files and layout.", 6000)
         else:
+            if getattr(self.store, "is_persistent", False):
+                # Logged out mid-session: keep working with what's on screen,
+                # but stop writing it to disk from here on.
+                self.store = app_state.EphemeralStore(self.store.as_dict())
             self.login_btn.setText("Log in")
             self.login_btn.setToolTip("Sign in to your PhotoForge account in your web browser")
 
