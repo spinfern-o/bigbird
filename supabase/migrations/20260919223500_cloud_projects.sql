@@ -3,7 +3,7 @@
 
 create table if not exists public.projects (
   id uuid primary key,
-  user_id uuid not null default (select auth.uid()) references auth.users(id) on delete cascade,
+  user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
   name text not null check (char_length(name) between 1 and 200),
   file_path text not null,
   thumb_path text,
