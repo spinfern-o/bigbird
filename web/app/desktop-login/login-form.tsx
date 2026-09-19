@@ -6,15 +6,9 @@ import { useSearchParams } from "next/navigation"
 import { useState } from "react"
 
 // Only the credential/existence signal is genericized — naming it would confirm
-// whether an email is registered. Errors the user can act on are passed through.
+// whether an email is registered.
 function loginErrorMessage(error: unknown): string {
-  const { code, status } = (error ?? {}) as { code?: string; status?: number }
-  if (code === "email_not_confirmed") {
-    return "Please confirm your email address — check your inbox for the link."
-  }
-  if (code === "over_request_rate_limit" || status === 429) {
-    return "Too many attempts. Please wait a moment and try again."
-  }
+  const { code } = (error ?? {}) as { code?: string }
   if (code === "invalid_credentials") {
     return "Invalid email or password."
   }
@@ -81,7 +75,7 @@ export function LoginForm() {
         <h2 className="text-base font-medium">You are signed in</h2>
         <p className="mt-2 text-sm leading-relaxed text-muted">
           {hasDesktopTarget
-            ? "Returning you to PhotoForge. You can close this tab if it does not close on its own."
+            ? "You can close this page and return to PhotoForge."
             : "Open PhotoForge on your computer and press Log in to connect this account."}
         </p>
       </div>
