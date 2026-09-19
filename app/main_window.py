@@ -107,7 +107,7 @@ class WelcomeWidget(QWidget):
 
 
 class MainWindow(SelectionActions, QMainWindow):
-    def __init__(self):
+    def __init__(self, auth=None):
         super().__init__()
         self.settings = QSettings("PhotoForge", "PhotoForge")
         self.resize(1440, 900)
@@ -150,7 +150,9 @@ class MainWindow(SelectionActions, QMainWindow):
         self._thumb_timer = QTimer(self, singleShot=True, interval=400)
         self._thumb_timer.timeout.connect(self._update_preset_thumbs)
 
-        self.auth = AuthManager(self)
+        self.auth = auth or AuthManager(self)
+        if auth is not None:
+            self.auth.setParent(self)
         self.auth.authChanged.connect(self._update_auth_ui)
 
         self._build_actions()
@@ -831,6 +833,7 @@ class MainWindow(SelectionActions, QMainWindow):
             self._place_path(path)
 
     def _place_path(self, path):
+        self._remember_dir(path)
         try:
             px = imageio.load_image(path)
         except Exception as e:
