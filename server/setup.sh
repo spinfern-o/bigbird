@@ -14,7 +14,7 @@ fi
 .venv-server/bin/python -m pip install --upgrade pip
 .venv-server/bin/python -m pip install -r server/requirements.txt
 
-echo "Downloading AI models (~590 MB)..."
+echo "Downloading AI models (~380 MB)..."
 .venv-server/bin/python - <<'EOF'
 from app.ai import models
 for key, info in models.MODELS.items():
