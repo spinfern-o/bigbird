@@ -57,8 +57,22 @@ inside the desktop app. Set these in the Vercel project:
 | `NVIDIA_QWEN_IMAGE_EDIT_KEY` | The NVIDIA key. **Never** prefix with `NEXT_PUBLIC_` -- that would inline it into the browser bundle and publish it. `NVIDIA_API_KEY` is accepted as a fallback. |
 | `NIM_ENDPOINT` | Full NVIDIA NIM invoke URL; confirm the current path on build.nvidia.com. |
 
-Point the desktop app at it with `PHOTOFORGE_CLOUD_URL`
-(default `http://localhost:3000/api/edit` for development).
+The desktop app defaults to `https://www.phrame.tech/api/edit`. Override it with
+`PHOTOFORGE_CLOUD_URL=http://localhost:3000/api/edit` for local development.
+
+## Cloud projects
+
+Signed-in users can use **File → Save to Cloud…** and **File → Open from Cloud…**.
+Projects stay private in the Supabase `projects` Storage bucket and metadata table.
+
+The required table, private bucket, grants, and row-level-security policies live in
+`supabase/migrations/20260919223500_cloud_projects.sql`. Apply that migration to the
+same Supabase project used by the login site before enabling cloud saves. The policies
+restrict both metadata rows and Storage paths to the authenticated user's UUID.
+
+The desktop client ships only the public Supabase anon/publishable key. It never ships a
+service-role key. For staging, `PHOTOFORGE_SUPABASE_URL` and
+`PHOTOFORGE_SUPABASE_ANON_KEY` can override the production client configuration.
 
 ## Features
 

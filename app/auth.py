@@ -106,6 +106,19 @@ class AuthManager(QObject):
         """The token cloud features send to prove who's asking (app/ai/base.py)."""
         return (self._session or {}).get("access_token")
 
+    @property
+    def session(self) -> dict:
+        """A copy of the current session for authenticated cloud features."""
+        return dict(self._session or {})
+
+    def update_session(self, **fields):
+        """Persist refreshed Supabase session fields without exposing internal state."""
+        if self._session is None:
+            return
+        self._session.update({k: v for k, v in fields.items() if v not in (None, "")})
+        self._session["saved_at"] = int(time.time())
+        self._save()
+
     def _load_saved(self):
         try:
             if _SESSION_PATH.exists():
