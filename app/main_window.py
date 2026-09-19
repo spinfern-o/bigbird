@@ -2,7 +2,7 @@ import os
 
 import numpy as np
 
-from PySide6.QtCore import QSize, Qt, QThreadPool, QTimer
+from PySide6.QtCore import QSettings, QSize, Qt, QThreadPool, QTimer
 from PySide6.QtGui import QAction, QActionGroup, QColor, QImage, QKeySequence, QPainter, QShortcut
 from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDialog, QDockWidget, QFileDialog, QHBoxLayout,
                                QInputDialog, QLabel, QMainWindow, QMessageBox, QPushButton,
@@ -109,7 +109,16 @@ class WelcomeWidget(QWidget):
 class MainWindow(SelectionActions, QMainWindow):
     def __init__(self):
         super().__init__()
+        self.settings = QSettings("PhotoForge", "PhotoForge")
         self.resize(1440, 900)
+        geometry = self.settings.value("window/geometry")
+        if geometry:
+            self.restoreGeometry(geometry)
+        self._dir = self.settings.value("files/last_dir", os.path.expanduser("~/Pictures"))
+        recent = self.settings.value("files/recent", [])
+        if isinstance(recent, str):
+            recent = [recent] if recent else []
+        self._recent = [str(p) for p in (recent or [])][:10]
         self.setAcceptDrops(True)
         self.doc = None
         self.state = ToolState()
@@ -240,10 +249,19 @@ class MainWindow(SelectionActions, QMainWindow):
     def _build_menus(self):
         mb = self.menuBar()
         m = mb.addMenu("&File")
-        for a in (self.a_new, self.a_open, self.a_place, None, self.a_cloud_open,
-                  self.a_cloud_save, None, self.a_save, self.a_save_as,
-                  self.a_export, None, self.a_quit):
-            m.addSeparator() if a is None else m.addAction(a)
+        self.file_menu = m
+        for a in (self.a_new, self.a_open, self.a_place):
+            m.addAction(a)
+        self.recent_menu = m.addMenu("Open Recent")
+        self._refresh_recent_menu()
+        m.addSeparator()
+        for a in (self.a_cloud_open, self.a_cloud_save):
+            m.addAction(a)
+        m.addSeparator()
+        for a in (self.a_save, self.a_save_as, self.a_export):
+            m.addAction(a)
+        m.addSeparator()
+        m.addAction(self.a_quit)
         m = mb.addMenu("&Edit")
         for a in (self.a_undo, self.a_redo, None, self.a_reset):
             m.addSeparator() if a is None else m.addAction(a)
@@ -744,12 +762,51 @@ class MainWindow(SelectionActions, QMainWindow):
             self.load_path(path)
 
     def _last_dir(self):
-        return getattr(self, "_dir", os.path.expanduser("~/Pictures"))
+        return self._dir or os.path.expanduser("~/Pictures")
+
+    def _refresh_recent_menu(self):
+        if not hasattr(self, "recent_menu"):
+            return
+        self.recent_menu.clear()
+        existing = [p for p in self._recent if os.path.exists(p)]
+        if existing != self._recent:
+            self._recent = existing
+            self.settings.setValue("files/recent", self._recent)
+        if not self._recent:
+            empty = self.recent_menu.addAction("No recent files")
+            empty.setEnabled(False)
+            return
+        for path in self._recent:
+            action = self.recent_menu.addAction(os.path.basename(path))
+            action.setToolTip(path)
+            action.triggered.connect(lambda _=False, p=path: self.load_path(p))
+        self.recent_menu.addSeparator()
+        clear = self.recent_menu.addAction("Clear Recent Files")
+        clear.triggered.connect(self._clear_recent_files)
+
+    def _clear_recent_files(self):
+        self._recent = []
+        self.settings.setValue("files/recent", [])
+        self._refresh_recent_menu()
+
+    def _add_recent_file(self, path):
+        path = os.path.abspath(path)
+        self._recent = [p for p in self._recent if p != path]
+        self._recent.insert(0, path)
+        self._recent = self._recent[:10]
+        self.settings.setValue("files/recent", self._recent)
+        self._refresh_recent_menu()
+
+    def _remember_dir(self, path):
+        directory = os.path.dirname(os.path.abspath(path))
+        if directory:
+            self._dir = directory
+            self.settings.setValue("files/last_dir", directory)
 
     def load_path(self, path):
         if not self._confirm_discard():
             return
-        self._dir = os.path.dirname(path)
+        self._remember_dir(path)
         QApplication.setOverrideCursor(Qt.WaitCursor)
         try:
             if path.lower().endswith(imageio.PROJECT_EXT):
@@ -763,12 +820,14 @@ class MainWindow(SelectionActions, QMainWindow):
             QMessageBox.warning(self, APP_NAME, f"Sorry, that file couldn't be opened.\n\n{e}")
             return
         QApplication.restoreOverrideCursor()
+        self._add_recent_file(path)
         self.set_document(doc)
 
     def place_image(self):
         path, _ = QFileDialog.getOpenFileName(self, "Add a photo as a new layer", self._last_dir(),
                                               imageio.OPEN_FILTER)
         if path:
+            self._remember_dir(path)
             self._place_path(path)
 
     def _place_path(self, path):
@@ -833,6 +892,8 @@ class MainWindow(SelectionActions, QMainWindow):
         self.doc.path = path
         self.doc.display_name = os.path.basename(path)
         self.doc.dirty = False
+        self._remember_dir(path)
+        self._add_recent_file(path)
         self._update_labels()
         self.hint_lbl.setText(f"Project saved to {path}")
         return True
@@ -947,6 +1008,7 @@ class MainWindow(SelectionActions, QMainWindow):
             f"Image (*{ext})")
         if not path:
             return
+        self._remember_dir(path)
         if not os.path.splitext(path)[1]:
             path += ext
         QApplication.setOverrideCursor(Qt.WaitCursor)
@@ -1386,6 +1448,10 @@ use <b>Export</b> to save a finished copy, or <b>Save Project</b> to keep workin
 
     def closeEvent(self, e):
         if self._confirm_discard():
+            self.settings.setValue("window/geometry", self.saveGeometry())
+            self.settings.setValue("files/last_dir", self._dir)
+            self.settings.setValue("files/recent", self._recent)
+            self.settings.sync()
             self.cloud_conn.stop()
             QThreadPool.globalInstance().waitForDone(5000)
             e.accept()
