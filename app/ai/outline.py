@@ -56,6 +56,9 @@ class OutlineItem(QGraphicsItem):
             shade.addRect(QRectF(0, 0, e.doc_w, e.doc_h))
             shade.addPath(path)
             painter.fillPath(shade, QColor(0, 0, 0, 150))
+            # Every kept shape gets the same faint blue tint, so they all read as "kept"
+            # regardless of how bright or dark the photo is underneath.
+            painter.fillPath(path, QColor(60, 170, 255, 45))
         else:
             fill = QColor(e.color)
             fill.setAlpha(70)
@@ -64,6 +67,7 @@ class OutlineItem(QGraphicsItem):
         for i, poly in enumerate(e.polys + ([e.open] if e.open else [])):
             closed = i < len(e.polys)
             pts = [QPointF(x, y) for x, y in poly]
+            painter.setBrush(Qt.NoBrush)  # lines only; don't reuse the dots' white fill
             for width, col in ((3.2, QColor(0, 0, 0, 170)), (1.6, e.color)):
                 pen = QPen(col, width)
                 pen.setCosmetic(True)
