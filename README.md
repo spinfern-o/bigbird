@@ -45,8 +45,11 @@ can be built at the same time. See **[ROADMAP.txt](ROADMAP.txt)**.
 - **Refine Outline**: the cut-out edge becomes draggable dots joined by lines. Click a
   line to add a dot, right-click to delete, **More Points** for finer control. Edges you
   don't touch keep the AI's fine detail (e.g. hair).
-- **Remove Object** (LaMa, or MI-GAN for slower PCs): click dots around anything, press
-  Enter, and the gap is filled with matching background on a new layer
+- **Select Object(s) to Remove** (SAM 2.1 Tiny): click objects and the AI finds their
+  outlines (click again to deselect, Shift+click to add an area, right-click to exclude one,
+  **Smaller Part** to pick part of an object). **Remove Selected** makes them transparent on
+  a new layer so the layer below shows through, then opens **Refine Removal** so you can
+  adjust the outline with dots. Filling the gap is planned as a cloud feature.
 - Models download once on first use to `%LOCALAPPDATA%\PhotoForge\models`, use the GPU via
   DirectML when available, and fall back to the CPU. All are commercially licensed
   (Help → Open-source Licenses).

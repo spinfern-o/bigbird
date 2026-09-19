@@ -246,6 +246,14 @@ class Document(QObject):
         self.active = len(self.layers) - 1
         self.changed.emit("structure")
 
+    def add_derived_layer(self, pixels, name, label, source):
+        """Put an edited copy of layer `source` right above it and hide the original."""
+        self.push_undo(label)
+        self.layers[source].visible = False
+        self.layers.insert(source + 1, Layer(name, pixels))
+        self.active = source + 1
+        self.changed.emit("structure")
+
     def set_layer_pixels(self, pixels, label, index=None):
         self.push_undo(label)
         self.layers[self.active if index is None else index].pixels = pixels

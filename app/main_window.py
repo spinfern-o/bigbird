@@ -17,6 +17,7 @@ from .panels import AdjustPanel, ColorButton, LayersPanel, NoWheelSlider
 from .renderer import Renderer
 from .ai import models as ai_models, tasks as ai_tasks
 from .ai.outline import OutlineEditor, solidify, trace_mask
+from .ai.select import ObjectSelector
 from .ai.panel import AIPanel
 from .ai.runner import run_ai
 
@@ -31,8 +32,8 @@ TOOLS = [
     ("crop", "Crop", "C", "Crop (C): drag a box around the part you want to keep, then press Enter."),
     ("eyedropper", "Picker", "I", "Color Picker (I): click the photo to pick up a color for the brush."),
     ("text", "Text", "T", "Text (T): click where you want to add text."),
-    ("ai_remove", "Remove", "R", "Remove Object (R): click dots around something to erase it, "
-                                 "then press Enter. AI fills in the background."),
+    ("ai_remove", "Remove", "R", "Select to Remove (R): click the objects you want gone and the "
+                                 "AI finds their outlines. Press Enter to remove them."),
 ]
 TOOL_HINTS = {k: tip for k, _, _, tip in TOOLS}
 TOOL_HINTS["ai_refine"] = ("Refine Outline: the bright area is kept, the darkened area is "
@@ -479,7 +480,7 @@ class MainWindow(QMainWindow):
         show = {"paint": key in ("brush", "eraser"), "color": key in ("brush", "text", "eyedropper"),
                 "crop": key == "crop",
                 "info": key in ("hand", "move", "text", "eyedropper"),
-                "outline": key in OUTLINE_TOOLS}
+                "outline": key == "ai_refine", "select": key == "ai_remove"}
         for name, act in self.opt_groups.items():
             act.setVisible(show[name])
         self.opt_info.setText(TOOL_HINTS[key].split(": ", 1)[1])
@@ -487,7 +488,7 @@ class MainWindow(QMainWindow):
         if key == "crop":
             self.canvas.setFocus()
         if key == "ai_remove" and self.doc:
-            self._start_outline("ai_remove")
+            self._start_select()
 
     def _bump_size(self, f):
         s = self.state.brush_size
@@ -798,8 +799,8 @@ class MainWindow(QMainWindow):
                          "AI: cut out the main subject")
         self.a_ai_refine = A("Refine Outline…", self.ai_refine_outline, None,
                              "Adjust the edge of a cut-out with draggable dots")
-        self.a_ai_obj = A("Remove Object…", lambda: self.select_tool("ai_remove"), None,
-                          "AI: outline something with dots and erase it")
+        self.a_ai_obj = A("Select Object(s) to Remove…", lambda: self.select_tool("ai_remove"),
+                          None, "AI: click objects to select them, then remove them")
         for a in (self.a_ai_bg, self.a_ai_refine, self.a_ai_obj):
             self.ai_menu.addAction(a)
             self.doc_actions.append(a)
@@ -810,21 +811,48 @@ class MainWindow(QMainWindow):
         p.removeObject.connect(lambda: self.select_tool("ai_remove"))
         self.canvas.outlineApply.connect(self._outline_apply)
         self.canvas.outlineCancel.connect(lambda: self.select_tool("hand"))
+        self._outline_mode = None
+        self._removal = None
 
-        # Tool-options group shown while editing an outline.
-        w = QWidget()
-        w.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Preferred)
-        lay = QHBoxLayout(w)
-        lay.setContentsMargins(8, 0, 8, 0)
-        lay.setSpacing(8)
+        def group(name):
+            w = QWidget()
+            w.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Preferred)
+            lay = QHBoxLayout(w)
+            lay.setContentsMargins(8, 0, 8, 0)
+            lay.setSpacing(8)
+            self.opt_groups[name] = self.opts.addWidget(w)
+            self.opt_groups[name].setVisible(False)
+            return lay
+
+        # ---- options while selecting objects to remove
+        lay = group("select")
+        self.select_info = QLabel()
+        self.select_info.setObjectName("hintLabel")
+        lay.addWidget(self.select_info)
+        self.smaller_btn = QPushButton("Smaller Part")
+        self.smaller_btn.setToolTip("Selected too much? Switch the last object between the whole "
+                                    "object and smaller parts of it.")
+        self.smaller_btn.clicked.connect(self._smaller_part)
+        clear = QPushButton("Clear")
+        clear.setToolTip("Deselect everything")
+        clear.clicked.connect(lambda: self._outline_call("clear"))
+        self.remove_sel_btn = QPushButton("Remove Selected")
+        self.remove_sel_btn.setObjectName("accent")
+        self.remove_sel_btn.setToolTip("Make the selected objects transparent (Enter)")
+        self.remove_sel_btn.clicked.connect(self._outline_apply)
+        cancel = QPushButton("Cancel")
+        cancel.clicked.connect(lambda: self.select_tool("hand"))
+        for b in (self.smaller_btn, clear, self.remove_sel_btn, cancel):
+            lay.addWidget(b)
+
+        # ---- options while refining an outline (cut-out or removal)
+        lay = group("outline")
         self.outline_info = QLabel()
         self.outline_info.setObjectName("hintLabel")
         lay.addWidget(self.outline_info)
         for text, tip, method in (
-                ("More Points", "Add a dot in the middle of every line for finer control",
-                 "more_points"),
-                ("Fewer Points", "Remove every other dot to simplify the outline", "fewer_points"),
-                ("Clear", "Remove all dots and start over", "clear")):
+                ("More Points", "Use more dots for finer control", "more_points"),
+                ("Fewer Points", "Use fewer dots to simplify the outline", "fewer_points")):
             b = QPushButton(text)
             b.setToolTip(tip)
             b.clicked.connect(lambda _=False, m=method: self._outline_call(m))
@@ -844,82 +872,49 @@ class MainWindow(QMainWindow):
         self.crisp_chk.setToolTip("Make the AI's soft edges solid everywhere, e.g. if a hand "
                                   "or object looks faded. Leave off for hair and fur.")
         lay.addWidget(self.crisp_chk)
-        self.feather_lbl = QLabel("Edge softness")
-        lay.addWidget(self.feather_lbl)
+        lay.addWidget(QLabel("Edge softness"))
         self.feather = NoWheelSlider(Qt.Horizontal)
         self.feather.setRange(0, 20)
         self.feather.setValue(1)
         self.feather.setFixedWidth(90)
         self.feather.setToolTip("0 = crisp edge. Higher values blend the edge more softly.")
         lay.addWidget(self.feather)
-        self.outline_apply_btn = QPushButton()
+        self.outline_apply_btn = QPushButton("Apply Outline")
         self.outline_apply_btn.setObjectName("accent")
         self.outline_apply_btn.clicked.connect(self._outline_apply)
         cancel = QPushButton("Cancel")
         cancel.clicked.connect(lambda: self.select_tool("hand"))
         lay.addWidget(self.outline_apply_btn)
         lay.addWidget(cancel)
-        self.opt_groups["outline"] = self.opts.addWidget(w)
-        self.opt_groups["outline"].setVisible(False)
 
     def _outline_call(self, method):
         if self.canvas.outline is not None:
             getattr(self.canvas.outline, method)()
             self.canvas.setFocus()
 
-    def _start_outline(self, mode):
-        if self.canvas.outline is not None:
-            self._end_outline()
-        color = QColor(255, 70, 70) if mode == "ai_remove" else QColor(40, 200, 255)
-        ed = OutlineEditor(self.canvas, color, dim_outside=mode == "ai_refine")
-        ed.on_change = self._outline_changed
-        self.canvas.outline = ed
-        self._outline_mode = mode
-        refine = mode == "ai_refine"
-        self.outline_apply_btn.setText("Apply Outline" if refine else "Remove Object")
-        self.feather.setVisible(refine)
-        self.feather_lbl.setVisible(refine)
-        self.crisp_chk.setVisible(refine)
-        self.points_lbl.setVisible(refine)
-        self.points_spin.setVisible(refine)
-        self.canvas.setFocus()
-        self._outline_changed()
-        return ed
-
     def _end_outline(self):
         self.canvas.outline.remove()
         self.canvas.outline = None
         self.canvas.set_backdrop(None)
-
-    def _outline_changed(self):
-        ed = self.canvas.outline
-        if ed is None:
-            return
-        n = ed.point_count()
-        if ed.open:
-            msg = f"{n} dots. Click the first (yellow) dot or double-click to close the shape"
-        elif not ed.has_shape():
-            msg = "Click around the object to place dots"
-        else:
-            msg = f"{n} dots. Drag to adjust, click a line to add a dot, right-click to delete"
-        self.outline_info.setText(msg)
-        self.outline_apply_btn.setEnabled(ed.has_shape())
-        self.points_spin.blockSignals(True)
-        self.points_spin.setValue(n)
-        self.points_spin.blockSignals(False)
-
-    def _points_changed(self, n):
-        if self.canvas.outline is not None:
-            self.canvas.outline.set_point_count(n)
-            self.canvas.setFocus()
+        self._outline_mode = None
 
     def _outline_apply(self):
+        mode = self._outline_mode
+        if mode == "ai_select":
+            self._remove_selected()
+            return
         ed = self.canvas.outline
         if ed is None or not ed.has_shape():
-            self.hint_lbl.setText("Close the outline first: click the first (yellow) dot.")
             return
-        if self._outline_mode == "ai_remove":
-            self._ai_remove_object(ed.rasterize())
+        if mode == "ai_refine_removal":
+            src, index = self._removal
+            removed = ed.result_mask(self.feather.value())
+            px = src.copy()
+            px[..., 3] = (src[..., 3].astype(np.uint16) * (255 - removed) // 255).astype(np.uint8)
+            if index < len(self.doc.layers):
+                self.doc.set_layer_pixels(px, "Refine removal", index=index)
+            self.select_tool("hand")
+            self.hint_lbl.setText("Removal outline applied. Ctrl+Z to undo.")
         else:
             layer = self.doc.active_layer()
             px = layer.pixels.copy()
@@ -929,11 +924,69 @@ class MainWindow(QMainWindow):
             self.select_tool("hand")
             self.hint_lbl.setText("Outline applied. Ctrl+Z to undo.")
 
+    # ------------------------------------------------------------------ refine outline
+    def _start_refine(self, mode, ref_mask, backdrop):
+        """Show draggable dots around ref_mask over the full, uncut photo."""
+        self.select_tool("ai_refine")
+        if self.canvas.outline is not None:
+            self._end_outline()
+        removal = mode == "ai_refine_removal"
+        ed = OutlineEditor(self.canvas, QColor(255, 70, 70) if removal else QColor(40, 200, 255),
+                           shade="inside" if removal else "outside")
+        ed.on_change = self._outline_changed
+        self.canvas.outline = ed
+        self._outline_mode = mode
+        self.crisp_chk.setVisible(not removal)
+        full = backdrop.copy()
+        full[..., 3] = 255
+        self.canvas.set_backdrop(imageio.to_qimage(full))
+        ed.load_mask(ref_mask, self.ai_panel.points.value())
+        self.opt_title.setText("  Refine Removal  " if removal else "  Refine Outline  ")
+        self.canvas.setFocus()
+        self._outline_changed()
+        return ed
+
+    def _outline_changed(self):
+        ed = self.canvas.outline
+        if ed is None or self._outline_mode == "ai_select":
+            return
+        n = ed.point_count()
+        what = "removed (darkened red)" if self._outline_mode == "ai_refine_removal" else "kept"
+        self.outline_info.setText(f"{n} dots. Area {what}. Drag dots, click a line to add one, "
+                                  "right-click to delete")
+        self.outline_apply_btn.setEnabled(ed.has_shape())
+        self.points_spin.blockSignals(True)
+        self.points_spin.setValue(n)
+        self.points_spin.blockSignals(False)
+
+    def _points_changed(self, n):
+        if self.canvas.outline is not None and self._outline_mode != "ai_select":
+            self.canvas.outline.set_point_count(n)
+            self.canvas.setFocus()
+
+    def ai_refine_outline(self):
+        if not self.doc:
+            return
+        layer = self.doc.active_layer()
+        alpha = layer.pixels[..., 3]
+        if alpha.min() > 250:
+            QMessageBox.information(
+                self, "Refine Outline",
+                "The selected layer has no transparent areas to refine.\n\n"
+                "Use Remove Background first, then select the Cutout layer.")
+            return
+        polys, _ = trace_mask(alpha)
+        if not polys:
+            QMessageBox.information(self, "Refine Outline", "This layer is almost empty.")
+            return
+        self._start_refine("ai_refine", alpha, layer.pixels)
+        self.crisp_chk.setChecked(self.ai_panel.edges.currentData() == "crisp")
+
+    # ------------------------------------------------------------------ remove background
     def ai_remove_background(self):
         if not self.doc:
             return
         comp = np.array(self.doc.composite())
-
         crisp = self.ai_panel.edges.currentData() == "crisp"
 
         def done(mask):
@@ -951,45 +1004,77 @@ class MainWindow(QMainWindow):
         run_ai(self, ["birefnet_lite"], "Remove Background", "Finding the subject…",
                lambda: ai_tasks.remove_background(comp), done)
 
-    def ai_refine_outline(self):
-        if not self.doc:
-            return
-        alpha = self.doc.active_layer().pixels[..., 3]
-        if alpha.min() > 250:
-            QMessageBox.information(
-                self, "Refine Outline",
-                "The selected layer has no transparent areas to refine.\n\n"
-                "Use Remove Background first, then select the Cutout layer.")
-            return
-        polys, _ = trace_mask(alpha)
-        if not polys:
-            QMessageBox.information(self, "Refine Outline", "This layer is almost empty.")
-            return
-        self.select_tool("ai_refine")
-        ed = self._start_outline("ai_refine")
-        # Show the whole, uncut photo so it's clear what is kept and what is removed.
-        full = self.doc.active_layer().pixels.copy()
-        full[..., 3] = 255
-        self.canvas.set_backdrop(imageio.to_qimage(full))
-        self.crisp_chk.setChecked(self.ai_panel.edges.currentData() == "crisp")
-        ed.load_mask(alpha, self.ai_panel.points.value())
-        self._outline_changed()
-
-    def _ai_remove_object(self, mask):
+    # ------------------------------------------------------------------ select & remove objects
+    def _start_select(self):
+        """Analyse the photo once (SAM image encoder); then clicks select objects instantly."""
         comp = np.array(self.doc.composite())
-        quality = self.ai_panel.quality.currentData()
-        key = "lama" if quality == "best" else "migan"
+        token = object()
+        self._select_token = token
 
-        def done(patch):
-            self.doc.add_result_layer(patch, "Object removed", "Remove object")
+        def done(sam):
+            if self._select_token is not token or self.state.tool != "ai_remove" or not self.doc:
+                return
             if self.canvas.outline is not None:
-                self.canvas.outline.clear()
+                self._end_outline()
+            sel = ObjectSelector(self.canvas, sam)
+            sel.on_change = self._select_changed
+            self.canvas.outline = sel
+            self._outline_mode = "ai_select"
             self.ai_panel.refresh()
-            self.hint_lbl.setText("Object removed (on its own layer). Outline another object, "
-                                  "or pick another tool when you're done.")
+            self.canvas.setFocus()
+            self._select_changed()
 
-        run_ai(self, [key], "Remove Object", "Filling in the background…",
-               lambda: ai_tasks.remove_object(comp, mask, quality), done)
+        self.select_info.setText("Getting ready…")
+        self.remove_sel_btn.setEnabled(False)
+        self.smaller_btn.setEnabled(False)
+        run_ai(self, ["sam2"], "Select Objects", "Looking at the photo…",
+               lambda: ai_tasks.SamImage(comp), done)
+
+    def _select_changed(self):
+        sel = self.canvas.outline
+        if sel is None or self._outline_mode != "ai_select":
+            return
+        n = sel.count()
+        if n == 0:
+            msg = "Click the object(s) you want to remove"
+        else:
+            msg = (f"{n} object{'s' if n != 1 else ''} selected. Click more, click one again to "
+                   "deselect, Shift+click to add an area, right-click to exclude an area")
+        self.select_info.setText(msg)
+        self.remove_sel_btn.setEnabled(n > 0)
+        self.smaller_btn.setEnabled(n > 0 and len(sel.objects[-1].points) == 1)
+
+    def _smaller_part(self):
+        if self._outline_mode == "ai_select":
+            self.canvas.outline.smaller_part()
+            self.canvas.setFocus()
+
+    def _layer_for_mask(self, mask):
+        """The topmost visible layer that actually has pixels where the objects are."""
+        sel = mask > 127
+        for i in range(len(self.doc.layers) - 1, -1, -1):
+            layer = self.doc.layers[i]
+            if layer.visible and layer.pixels[..., 3][sel].mean() > 128:
+                return i
+        return self.doc.active
+
+    def _remove_selected(self):
+        sel = self.canvas.outline
+        if sel is None or not sel.count():
+            return
+        mask = solidify(sel.mask(), sel.mask(), 1.0)
+        index = self._layer_for_mask(mask)
+        src = self.doc.layers[index].pixels
+        px = src.copy()
+        px[..., 3] = (src[..., 3].astype(np.uint16) * (255 - mask) // 255).astype(np.uint8)
+        n = sel.count()
+        self.doc.add_derived_layer(px, "Objects removed", f"Remove {n} object{'s' * (n != 1)}",
+                                   index)
+        self._removal = (src, index + 1)
+        self._start_refine("ai_refine_removal", mask, src)
+        self.hint_lbl.setText(
+            "Removed! The area is now transparent, so the layer below shows through. Adjust the "
+            "red outline if needed and press Enter, or pick another tool to keep it as is.")
 
     def show_licenses(self):
         rows = "".join(
