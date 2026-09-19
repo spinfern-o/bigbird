@@ -861,7 +861,10 @@ class MainWindow(SelectionActions, QMainWindow):
             return
 
         doc = self.doc
+        cloud_user_id = api.user_id()
         project_id = getattr(doc, "cloud_id", None)
+        if getattr(doc, "cloud_user_id", None) != cloud_user_id:
+            project_id = None
         QApplication.setOverrideCursor(Qt.WaitCursor)
         try:
             data = cloud_projects.project_bytes(doc)
@@ -874,6 +877,7 @@ class MainWindow(SelectionActions, QMainWindow):
 
         def done(row):
             doc.cloud_id = row.get("id")
+            doc.cloud_user_id = cloud_user_id
             doc.display_name = name
             doc.dirty = False
             self._update_labels()
@@ -920,6 +924,7 @@ class MainWindow(SelectionActions, QMainWindow):
                 return
             doc.display_name = row["name"]
             doc.cloud_id = row["id"]
+            doc.cloud_user_id = api.user_id()
             self.set_document(doc)
             self.hint_lbl.setText(f"Opened '{row['name']}' from your phrame.tech account.")
 
