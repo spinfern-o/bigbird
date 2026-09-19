@@ -24,7 +24,7 @@ from .ai import cloud as ai_cloud, models as ai_models, tasks as ai_tasks
 from .ai.connection import CloudConnection
 from .ai.settings_dialog import AISettingsDialog
 from .ai.outline import OutlineEditor, solidify, trace_mask
-from .ai.select import ObjectSelector
+from .ai.object_select import ObjectSelector
 from .ai.panel import AIPanel
 from .ai.runner import run_ai
 
@@ -431,6 +431,8 @@ class MainWindow(SelectionActions, QMainWindow):
         ap.presetChosen.connect(self._preset_chosen)
         ap.autoRequested.connect(self.auto_enhance)
         ap.resetRequested.connect(self.reset_adjustments)
+        ap.mixerResetRequested.connect(self.reset_color_mixer)
+        ap.hint.connect(self.hint_lbl.setText)
         lp = self.layers_panel.actions
         lp["new"].clicked.connect(self.a_layer_new.trigger)
         lp["dup"].clicked.connect(self.a_layer_dup.trigger)
@@ -631,7 +633,7 @@ class MainWindow(SelectionActions, QMainWindow):
 
     # ================================================================== adjustments
     def _setting_changed(self, key, value):
-        self.doc.push_undo(f"{key.title()} adjustment", coalesce="adj:" + key)
+        self.doc.push_undo(f"{adjustments.setting_label(key)} adjustment", coalesce="adj:" + key)
         self.doc.adjust[key] = value
         self.renderer.request_update()
 
@@ -652,6 +654,15 @@ class MainWindow(SelectionActions, QMainWindow):
     def reset_adjustments(self):
         if self.doc and not adjustments.is_default(self.doc.adjust):
             self.doc.set_adjustments(adjustments.DEFAULTS, "Reset adjustments")
+
+    def reset_color_mixer(self):
+        """Put every Color Mixer slider back to zero in a single undo step."""
+        if self.doc and not adjustments.mixer_is_default(self.doc.adjust):
+            s = dict(self.doc.adjust)
+            s.update(adjustments.MIXER_DEFAULTS)
+            self.doc.set_adjustments(s, "Reset Color Mixer")
+            self.hint_lbl.setText("Color Mixer reset — your other sliders are untouched. "
+                                  "Ctrl+Z to undo.")
 
     def toggle_compare(self, on):
         self.renderer.show_original = on
@@ -828,12 +839,12 @@ class MainWindow(SelectionActions, QMainWindow):
 
     # ------------------------------------------------------------------ cloud projects
     def _cloud_api(self):
-        """The cloud API for the signed-in user, or None (asking them to log in)."""
+        """Return the signed-in cloud API, or start login and ask the user to retry."""
         if not self.auth.is_logged_in:
-            r = QMessageBox.question(
+            if QMessageBox.question(
                 self, "Cloud projects",
-                "Cloud projects are saved to your phrame.tech account.\n\nLog in now?")
-            if r == QMessageBox.Yes:
+                "Cloud projects are saved to your phrame.tech account.\n\nLog in now?"
+            ) == QMessageBox.Yes:
                 self.auth.login()
             return None
         return cloud_projects.Api(self.auth)
@@ -842,17 +853,22 @@ class MainWindow(SelectionActions, QMainWindow):
         api = self._cloud_api()
         if api is None or not self.doc:
             return
+
         default = os.path.splitext(getattr(self.doc, "display_name", "Untitled"))[0]
         name, ok = QInputDialog.getText(self, "Save to Cloud", "Project name:", text=default)
         name = name.strip()
         if not ok or not name:
             return
+
         doc = self.doc
         project_id = getattr(doc, "cloud_id", None)
         QApplication.setOverrideCursor(Qt.WaitCursor)
         try:
             data = cloud_projects.project_bytes(doc)
             thumb = cloud_projects.thumbnail_jpeg(doc)
+        except Exception as e:
+            QMessageBox.warning(self, "Save to Cloud", f"Couldn't prepare this project.\n\n{e}")
+            return
         finally:
             QApplication.restoreOverrideCursor()
 
@@ -861,13 +877,18 @@ class MainWindow(SelectionActions, QMainWindow):
             doc.display_name = name
             doc.dirty = False
             self._update_labels()
-            self.hint_lbl.setText(f"Saved '{name}' to your phrame.tech account "
-                                  f"({len(data) / 1048576:.1f} MB). Open it anywhere with "
-                                  "File → Open from Cloud.")
+            self.hint_lbl.setText(
+                f"Saved '{name}' to your phrame.tech account "
+                f"({len(data) / 1048576:.1f} MB)."
+            )
 
-        run_cloud(self, "Save to Cloud", f"Uploading '{name}'…",
-                  lambda: api.save_project(name, data, thumb, doc.width, doc.height, project_id),
-                  done)
+        run_cloud(
+            self,
+            "Save to Cloud",
+            f"Uploading '{name}'…",
+            lambda: api.save_project(name, data, thumb, doc.width, doc.height, project_id),
+            done,
+        )
 
     def cloud_open(self):
         api = self._cloud_api()
@@ -876,12 +897,7 @@ class MainWindow(SelectionActions, QMainWindow):
 
         def show(rows):
             dlg = CloudProjectsDialog(self, api, rows)
-            dlg.show()
-            QApplication.processEvents()
-            try:
-                dlg.load_thumbs()
-            except cloud_projects.CloudError:
-                pass
+            dlg.load_thumbs()
             if dlg.exec() == QDialog.Accepted and dlg.chosen:
                 self._cloud_download(api, dlg.chosen)
 
@@ -896,16 +912,24 @@ class MainWindow(SelectionActions, QMainWindow):
             try:
                 doc = imageio.load_project(io.BytesIO(data))
             except Exception as e:
-                QMessageBox.warning(self, "Open from Cloud", f"That project couldn't be "
-                                                             f"opened.\n\n{e}")
+                QMessageBox.warning(
+                    self,
+                    "Open from Cloud",
+                    f"That project couldn't be opened.\n\n{e}",
+                )
                 return
             doc.display_name = row["name"]
             doc.cloud_id = row["id"]
             self.set_document(doc)
             self.hint_lbl.setText(f"Opened '{row['name']}' from your phrame.tech account.")
 
-        run_cloud(self, "Open from Cloud", f"Downloading '{row['name']}'…",
-                  lambda: api.download_project(row["file_path"]), done)
+        run_cloud(
+            self,
+            "Open from Cloud",
+            f"Downloading '{row['name']}'…",
+            lambda: api.download_project(row["file_path"]),
+            done,
+        )
 
     def export_image(self):
         dlg = ExportDialog(self.doc.width, self.doc.height, self)
@@ -948,10 +972,8 @@ class MainWindow(SelectionActions, QMainWindow):
                           None, "AI: click objects to select them, then remove them")
         self.a_ai_refine_rm = A("Refine Removal…", self.ai_refine_removal, None,
                                 "Adjust what was removed with draggable dots")
-        self.a_ai_fill = A("Fill Removed Area (cloud GPU)", self.ai_fill_removed, None,
-                           "Fill the gap left by removed objects on your NVIDIA cloud GPU")
         self.a_ai_settings = A("AI Settings…", self.ai_settings, None,
-                               "Run heavy AI on this computer or your NVIDIA cloud GPU")
+                               "Optionally accelerate local AI on the Brev NVIDIA GPU")
         self.cloud_conn = CloudConnection(self)
         self.cloud_conn.changed.connect(self._cloud_changed)
         self.cloud_lbl = QPushButton()
@@ -960,9 +982,8 @@ class MainWindow(SelectionActions, QMainWindow):
         self.cloud_lbl.clicked.connect(self.ai_settings)
         self.statusBar().addPermanentWidget(self.cloud_lbl)
         self._cloud_changed(self.cloud_conn.state, self.cloud_conn.message)
-        QTimer.singleShot(400, self.cloud_conn.start)   # auto-connect if the GPU is on
-        for a in (self.a_ai_bg, self.a_ai_refine, self.a_ai_obj, self.a_ai_refine_rm,
-                  self.a_ai_fill):
+        QTimer.singleShot(400, self.cloud_conn.start)
+        for a in (self.a_ai_bg, self.a_ai_refine, self.a_ai_obj, self.a_ai_refine_rm):
             self.ai_menu.addAction(a)
             self.doc_actions.append(a)
             a.setEnabled(self.doc is not None)
@@ -973,7 +994,6 @@ class MainWindow(SelectionActions, QMainWindow):
         p.refineOutline.connect(self.ai_refine_outline)
         p.removeObject.connect(lambda: self.select_tool("ai_remove"))
         p.refineRemoval.connect(self.ai_refine_removal)
-        p.fillRemoved.connect(self.ai_fill_removed)
         p.openSettings.connect(self.ai_settings)
         self.canvas.outlineApply.connect(self._outline_apply)
         self.canvas.outlineCancel.connect(self._outline_cancel)
@@ -1232,21 +1252,6 @@ class MainWindow(SelectionActions, QMainWindow):
             self.canvas.outline.smaller_part()
             self.canvas.setFocus()
 
-    def _removal_layer(self):
-        """(index, removed mask) of the active or topmost "Objects removed" layer, or None."""
-        layers = self.doc.layers
-        index = self.doc.active
-        if layers[index].source is None:
-            index = next((i for i in range(len(layers) - 1, -1, -1)
-                          if layers[i].source is not None), None)
-        if index is None:
-            return None
-        layer = layers[index]
-        src_a = layer.source[..., 3].astype(np.float32)
-        cur_a = layer.pixels[..., 3].astype(np.float32)
-        removed = np.where(src_a > 0, 255 - cur_a * 255 / np.maximum(src_a, 1), 0)
-        return index, np.clip(removed + 0.5, 0, 255).astype(np.uint8)
-
     def ai_settings(self):
         AISettingsDialog(self, self.cloud_conn).exec()
         self.ai_panel.refresh()
@@ -1259,49 +1264,6 @@ class MainWindow(SelectionActions, QMainWindow):
         self.ai_panel.refresh()
         if state in ("connected", "offline", "connecting"):
             self.hint_lbl.setText(message)
-
-    def ai_fill_removed(self):
-        """Fill the transparent gap left by Remove Objects, on the cloud GPU."""
-        if not self.doc:
-            return
-        found = self._removal_layer()
-        if found is None or not (found[1] > 127).any():
-            QMessageBox.information(self, "Fill Removed Area",
-                                    "Remove some objects first (Select Object(s) to Remove).")
-            return
-        if not ai_cloud.use_cloud():
-            if ai_cloud.prefers_cloud():
-                r = QMessageBox.question(
-                    self, "Fill Removed Area",
-                    "Filling runs on your NVIDIA cloud GPU, which isn't connected right now:\n"
-                    f"{self.cloud_conn.message}\n\nStart the GPU in Brev if needed, then click "
-                    "Yes to try connecting again.")
-                if r == QMessageBox.Yes:
-                    self.cloud_conn.retry()
-            else:
-                r = QMessageBox.question(
-                    self, "Fill Removed Area",
-                    "Filling runs on your NVIDIA cloud GPU (Brev), which isn't set up yet.\n\n"
-                    "Open AI Settings now?")
-                if r == QMessageBox.Yes:
-                    self.ai_settings()
-            return
-        index, removed = found
-        layer = self.doc.layers[index]
-        src = layer.source
-        rgb = np.ascontiguousarray(src[..., :3])
-
-        def done(result):
-            filled, blend = result
-            w = (blend.astype(np.float32) / 255.0)[..., None]
-            px = layer.pixels.copy()
-            px[..., :3] = np.clip(rgb * (1 - w) + filled * w + 0.5, 0, 255).astype(np.uint8)
-            px[..., 3] = src[..., 3]
-            self.doc.set_layer_pixels(px, "Fill removed area", index=index)
-            self.hint_lbl.setText("Filled on the cloud GPU. Ctrl+Z to undo.")
-
-        run_ai(self, [], "Fill Removed Area", "Filling in the background…",
-               lambda: ai_cloud.Client().fill(rgb, removed), done)
 
     def ai_refine_removal(self):
         """Re-open the removal outline of an "Objects removed" layer."""
