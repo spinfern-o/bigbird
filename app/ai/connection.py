@@ -95,6 +95,11 @@ class _Forward:
         self._close_tunnels(name, port)  # a stale tunnel from earlier would block the port
         self.started = (name, port)
         cmd = _tunnel_cmd(name, port)
+        if cmd is None:
+            raise RuntimeError(
+                "Brev connection tools were not found. Install the Brev CLI (or WSL on Windows) "
+                "and run 'brev login' once."
+            )
         with open(self.log, "wb") as f:
             self.proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=f,
                                          stderr=subprocess.STDOUT, creationflags=_NO_WINDOW)
