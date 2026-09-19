@@ -16,7 +16,7 @@ from .icons import tool_icon
 from .panels import AdjustPanel, ColorButton, LayersPanel, NoWheelSlider
 from .renderer import Renderer
 from .ai import models as ai_models, tasks as ai_tasks
-from .ai.outline import OutlineEditor, trace_mask
+from .ai.outline import OutlineEditor, solidify, trace_mask
 from .ai.panel import AIPanel
 from .ai.runner import run_ai
 
@@ -937,6 +937,8 @@ class MainWindow(QMainWindow):
         crisp = self.ai_panel.edges.currentData() == "crisp"
 
         def done(mask):
+            # Anything the AI mostly kept becomes fully solid inside; only the edge stays soft.
+            mask = solidify(mask, mask, 1.0)
             if crisp:
                 mask = ai_tasks.crisp_edges(mask)
             px = comp.copy()

@@ -175,7 +175,8 @@ class OutlineEditor:
     def result_mask(self, feather=0.0, base=None):
         """The final mask: the reference edge where untouched, the dots where edited."""
         ref = self.ref if base is None else base
-        return merge_refined(ref, self.rasterize(feather), self.tol)
+        outline = self.rasterize(feather)
+        return solidify(merge_refined(ref, outline, self.tol), outline, self.tol)
 
     def more_points(self):
         """Double the dots. Traced outlines re-trace the true edge; hand-drawn ones get a dot
@@ -376,6 +377,20 @@ def trace_mask(mask, points=150):
             hi = mid
     polys = _approx(contours, hi)
     return polys, max(1.0, hi)
+
+
+def solidify(alpha, outline_mask, tol):
+    """Inside the outline is fully kept and far outside is fully removed. Only a thin band
+    along the outline keeps the AI's soft edge (e.g. wisps of hair)."""
+    h, w = alpha.shape
+    band = int(round(max(4.0, 2.0 * tol, 0.005 * np.hypot(h, w))))
+    k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * band + 1, 2 * band + 1))
+    inside = outline_mask > 127
+    core = cv2.erode(inside.astype(np.uint8), k)
+    near = cv2.dilate(inside.astype(np.uint8), k)
+    out = np.maximum(alpha, core * np.uint8(255))
+    out[near == 0] = 0
+    return out
 
 
 def merge_refined(orig_alpha, outline_mask, tol):
