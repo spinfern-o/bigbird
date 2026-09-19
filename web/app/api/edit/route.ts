@@ -14,7 +14,9 @@
  * the browser bundle and publish it on the website.
  */
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
+// Prefer the server-only variable the Supabase integration provides; fall back
+// to the public one, which is the same value and always present.
+const SUPABASE_URL = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL
 const NVIDIA_API_KEY = process.env.NVIDIA_API_KEY
 // Full NIM invoke URL for the image-edit model. Config rather than a constant
 // because NIM model paths change; confirm yours on build.nvidia.com.
