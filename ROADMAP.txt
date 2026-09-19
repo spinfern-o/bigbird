@@ -22,7 +22,8 @@ TRACK A - SELECTIONS & AI
 --------------------------------------------------------------------------------
 Owns:  app/selection.py (new), app/ai/ (new package), app/ai_dialogs.py (new)
 
-A1. Selection system  [do this first - A3-A6 depend on it]
+A1. Selection system  [DONE: Marquee, Lasso (freehand/magnetic/polygonal), Magic Wand,
+    Select menu + Select tab, right-click menu]
     - Document gets `selection`: an HxW uint8 mask (None = everything selected).
     - Tools: Rectangle select, Ellipse select, Lasso.
     - "Marching ants" outline on the canvas.
@@ -127,7 +128,8 @@ B3. Layer Masks
     - Mask thumbnail next to the layer thumbnail.
     - (Integration with A1: "Mask from Selection" - whoever lands second adds it.)
 
-B4. Retouch tools
+B4. Retouch tools  [PARTLY DONE: Spot Healing Brush, Remove Blemishes, Smooth Skin,
+    Reduce Redness, Heal Selection]
     - Clone Stamp (Alt+click to set the source).
     - Spot Healing brush (blends texture and color from nearby).
     - Red-eye removal.

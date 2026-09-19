@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (QGraphicsEllipseItem, QGraphicsPathItem, QGraphic
                                QGraphicsRectItem, QGraphicsScene, QGraphicsView)
 
 from . import imageio
+from .selection import MarchingAnts
 
 
 class ToolState:
@@ -62,6 +63,8 @@ class Canvas(QGraphicsView):
     hint = Signal(str)
     outlineApply = Signal()
     outlineCancel = Signal()
+    healFinished = Signal(object)          # uint8 mask painted with the Spot Healing Brush
+    contextRequested = Signal(object)      # global position for a right-click menu
 
     def __init__(self, state, parent=None):
         super().__init__(parent)
@@ -123,7 +126,10 @@ class Canvas(QGraphicsView):
         self._stroke = None
         self._crop_drag = None
         self._move_origin = None
-        self.outline = None  # OutlineEditor while an AI outline tool is active
+        # Interactive overlay tool (outline editor, object selector, lasso, wand, ...)
+        self.outline = None
+        self.ants = MarchingAnts()
+        self._scene.addItem(self.ants)
         self.update_cursor()
 
     # ------------------------------------------------------------------ display
@@ -148,6 +154,16 @@ class Canvas(QGraphicsView):
         self.doc_w = self.doc_h = 0
         self.item.setPixmap(QPixmap())
         self.clear_crop()
+        self.ants.set_mask(None)
+
+    def set_selection(self, mask):
+        self.ants.set_mask(mask)
+
+    def contextMenuEvent(self, e):
+        if self.outline is not None and getattr(self.outline, "wants_right_click", True):
+            return  # right-click is used by the active tool
+        if self.doc_w:
+            self.contextRequested.emit(e.globalPos())
 
     def drawBackground(self, painter, rect):
         painter.fillRect(rect, QColor(38, 38, 40))
@@ -211,7 +227,7 @@ class Canvas(QGraphicsView):
         return 0 <= p.x() < self.doc_w and 0 <= p.y() < self.doc_h
 
     def _update_ring(self, p):
-        if self.state.tool in ("brush", "eraser") and self.doc_w and not self._space:
+        if self.state.tool in ("brush", "eraser", "heal") and self.doc_w and not self._space:
             r = self.state.brush_size / 2
             for ring in (self.ring_dark, self.ring_light):
                 ring.setRect(QRectF(p.x() - r, p.y() - r, 2 * r, 2 * r))
@@ -239,7 +255,7 @@ class Canvas(QGraphicsView):
             return
         if e.button() != Qt.LeftButton:
             return
-        if tool in ("brush", "eraser"):
+        if tool in ("brush", "eraser", "heal"):
             self._begin_stroke(p)
         elif tool == "crop":
             self._crop_press(p)
@@ -327,18 +343,23 @@ class Canvas(QGraphicsView):
         if not layer.visible:
             self.hint.emit("The selected layer is hidden. Turn it on in the Layers panel to paint on it.")
             return
-        img = imageio.to_qimage(layer.pixels).convertToFormat(QImage.Format_ARGB32_Premultiplied)
+        heal = self.state.tool == "heal"
+        if heal:  # the healing brush paints a mask of what to fix
+            img = QImage(self.doc_w, self.doc_h, QImage.Format_ARGB32_Premultiplied)
+            img.fill(Qt.transparent)
+        else:
+            img = imageio.to_qimage(layer.pixels).convertToFormat(QImage.Format_ARGB32_Premultiplied)
         live = QPixmap(self.item.pixmap())
         r = self.state.brush_size / 2
         spacing = max(0.5, r * 0.2)
         # Per-dab alpha so that overlapping dabs add up to the chosen strength.
         overlap = max(1.0, 2 * r / spacing)
         dab_alpha = 1 - (1 - min(self.state.strength, 0.999)) ** (1 / overlap)
-        if self.state.strength >= 1:
+        if self.state.strength >= 1 or heal:
             dab_alpha = 1.0
         self._stroke = {"img": img, "live": live, "last": p, "left": spacing,
                         "spacing": spacing, "alpha": dab_alpha,
-                        "erase": self.state.tool == "eraser"}
+                        "erase": self.state.tool == "eraser", "heal": heal}
         self._paint_dabs([p])
 
     def _continue_stroke(self, p):
@@ -358,13 +379,15 @@ class Canvas(QGraphicsView):
     def _paint_dabs(self, pts):
         s = self._stroke
         r = self.state.brush_size / 2
-        hard = self.state.hardness
+        hard = 1.0 if s["heal"] else self.state.hardness
         col = QColor(self.state.color)
         col.setAlphaF(s["alpha"])
-        clear = QColor(col)
-        clear.setAlpha(0)
         for target, sx, sy in ((s["img"], 1.0, 1.0),
                                (s["live"], 1.0 / self._disp_sx, 1.0 / self._disp_sy)):
+            if s["heal"]:  # solid mask in the image, translucent red on screen
+                col = QColor(255, 0, 0) if target is s["img"] else QColor(255, 60, 60, 90)
+            clear = QColor(col)
+            clear.setAlpha(0)
             painter = QPainter(target)
             painter.setRenderHint(QPainter.Antialiasing)
             painter.setPen(Qt.NoPen)
@@ -386,6 +409,9 @@ class Canvas(QGraphicsView):
 
     def _end_stroke(self):
         s, self._stroke = self._stroke, None
+        if s["heal"]:
+            self.healFinished.emit(imageio.from_qimage(s["img"])[..., 3].copy())
+            return
         label = "Eraser" if s["erase"] else "Brush stroke"
         self.strokeFinished.emit(imageio.from_qimage(s["img"]), label)
 

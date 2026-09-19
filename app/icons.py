@@ -85,9 +85,41 @@ def _ai_remove(p, c):
     p.drawLine(QPointF(56, 8), QPointF(44, 20))
 
 
+def _marquee(p, c):
+    p.save()
+    p.setPen(QPen(c, 4, Qt.DashLine, Qt.FlatCap))
+    p.drawRect(QRectF(10, 14, 44, 36))
+    p.restore()
+
+
+def _lasso(p, c):
+    p.drawEllipse(QPointF(34, 26), 20, 13)
+    path = QPainterPath(QPointF(20, 36))
+    path.cubicTo(QPointF(14, 44), QPointF(24, 50), QPointF(16, 58))
+    p.drawPath(path)
+
+
+def _wand(p, c):
+    p.drawLine(QPointF(12, 54), QPointF(40, 26))
+    for a, b in (((46, 8), (46, 18)), ((41, 13), (51, 13)), ((54, 26), (60, 26)),
+                 ((57, 23), (57, 29)), ((30, 12), (34, 12))):
+        p.drawLine(QPointF(*a), QPointF(*b))
+
+
+def _heal(p, c):
+    p.save()
+    p.translate(32, 32)
+    p.rotate(-45)
+    p.drawRoundedRect(QRectF(-24, -9, 48, 18), 9, 9)
+    p.setBrush(c)
+    p.drawRect(QRectF(-7, -9, 14, 18))
+    p.restore()
+
+
 DRAWERS = {"hand": _hand, "move": _move, "brush": _brush, "eraser": _eraser,
            "crop": _crop, "eyedropper": _eyedropper, "text": _text,
-           "ai_remove": _ai_remove}
+           "ai_remove": _ai_remove, "marquee": _marquee, "lasso": _lasso, "wand": _wand,
+           "heal": _heal}
 
 
 def tool_icon(name):

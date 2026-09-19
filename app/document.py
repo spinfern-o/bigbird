@@ -60,6 +60,7 @@ class Document(QObject):
         self.adjust = dict(adjustments.DEFAULTS)
         self.path = path
         self.dirty = False
+        self.selection = None  # HxW uint8 mask (255 = selected) or None
         self._undo, self._redo = [], []
 
     @classmethod
@@ -76,10 +77,10 @@ class Document(QObject):
     # ------------------------------------------------------------------ history
     def _snapshot(self):
         return ([l.copy() for l in self.layers], dict(self.adjust), self.active,
-                self.width, self.height)
+                self.width, self.height, self.selection)
 
     def _restore(self, snap):
-        layers, adj, self.active, self.width, self.height = snap
+        layers, adj, self.active, self.width, self.height, self.selection = snap
         self.layers = [l.copy() for l in layers]
         self.adjust = dict(adj)
 
@@ -277,6 +278,9 @@ class Document(QObject):
         self.push_undo(label)
         for l in self.layers:
             l.pixels = np.ascontiguousarray(fn(l.pixels))
+            l.source = None
+        if self.selection is not None:
+            self.selection = np.ascontiguousarray(fn(self.selection))
         self.height, self.width = self.layers[0].pixels.shape[:2]
         self.changed.emit("all")
 
@@ -291,6 +295,32 @@ class Document(QObject):
 
     def resize(self, w, h):
         self._map_all(lambda p: imageio.resize(p, w, h), "Resize image")
+
+    # ------------------------------------------------------------------ selection
+    def set_selection(self, mask, label):
+        """Replace the selection (None or an empty mask deselects)."""
+        if mask is not None and not (mask > 0).any():
+            mask = None
+        if mask is None and self.selection is None:
+            return
+        self.push_undo(label)
+        self.selection = None if mask is None else np.ascontiguousarray(mask, np.uint8)
+        self.changed.emit("selection")
+
+    def layer_via_selection(self, cut):
+        """Photoshop's Layer via Copy / Layer via Cut."""
+        self.push_undo("Layer via Cut" if cut else "Layer via Copy")
+        sel = self.selection.astype(np.uint16)
+        src = self.layers[self.active]
+        new = src.pixels.copy()
+        new[..., 3] = (new[..., 3] * sel // 255).astype(np.uint8)
+        if cut:
+            rest = src.pixels.copy()
+            rest[..., 3] = (rest[..., 3] * (255 - sel) // 255).astype(np.uint8)
+            src.pixels = rest
+        self.layers.insert(self.active + 1, Layer(self._unique_name("Layer"), new))
+        self.active += 1
+        self.changed.emit("structure")
 
     def set_adjustments(self, settings, label, coalesce=None):
         self.push_undo(label, coalesce)

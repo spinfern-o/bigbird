@@ -61,6 +61,19 @@ The Supabase environment variables (`NEXT_PUBLIC_SUPABASE_URL`,
 - Undo/redo for everything (40 steps)
 - Save projects (`.pforge`, keeps layers + edits) and export JPG/PNG/WebP/TIFF
 
+**Selections & retouching (like Photoshop)**
+- **Marquee (M)** rectangle/ellipse, **Lasso (L)** Freehand / Magnetic (snaps to edges) /
+  Polygonal, **Magic Wand (W)** with Tolerance, Contiguous, Sample All Layers, Anti-alias
+- New / Add / Subtract / Intersect (or Shift / Alt / Shift+Alt), animated marching ants
+- **Select** menu, right-click menu and **Select** tab: Select Subject (AI), Skin Tones, All,
+  Deselect, Inverse, Feather, Expand, Contract, Smooth, Border, Refine Edge (dots), Layer via
+  Copy/Cut, Delete, Fill, Stroke, Crop to Selection
+- **Retouch inside a selection:** Remove Blemishes (auto-detects acne, spots and small scars,
+  leaves pupils alone), Smooth Skin (edge-preserving, keeps pore texture), Reduce Redness,
+  Heal Selection
+- **Spot Healing Brush (J):** paint over a spot and it's replaced with matching texture
+- Filters, Brush and Eraser only affect the selection while one is active
+
 **AI tools (run locally, free and private)** in the **AI** tab and menu
 - **Remove Background** (BiRefNet-lite): cuts out the subject onto a new layer
 - **Refine Outline**: the cut-out edge becomes draggable dots joined by lines. Click a
@@ -89,4 +102,6 @@ status-bar hints for each tool, Quick Start guide (F1), double-click a slider's 
 | `app/panels.py` | Adjust panel (histogram, presets, sliders) and Layers panel |
 | `app/main_window.py` | menus, toolbars, file handling |
 | `app/ai/` | AI model registry/downloader, background & object removal, outline editor, AI tab |
+| `app/selection.py`, `app/selection_actions.py`, `app/selection_panel.py` | selection tools, Select menu/tab |
+| `app/retouch.py` | blemish removal, healing, skin smoothing, redness |
 | `app/filters.py`, `app/imageio.py`, `app/dialogs.py`, `app/theme.py`, `app/icons.py` | supporting pieces |
