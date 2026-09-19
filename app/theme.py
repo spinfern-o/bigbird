@@ -51,6 +51,8 @@ QLabel#welcomeSub {{ font-size: 18px; color: #b8b8c0; }}
 QLabel#welcomeHint {{ color: #8a8a92; }}
 QLabel#stepCard {{ background: #2e2e33; border: 1px solid #3a3a40; border-radius: 10px;
                    padding: 12px; }}
+QFrame#aiCard {{ background: #2e2e33; border: 1px solid #3a3a40; border-radius: 10px; }}
+QLabel#aiCardTitle {{ font-weight: bold; font-size: 14px; color: white; }}
 QMenu {{ background: #2d2d31; border: 1px solid #444; }}
 QMenu::item {{ padding: 6px 24px; }}
 QMenu::item:selected {{ background: {ACCENT}; }}

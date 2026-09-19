@@ -72,8 +72,22 @@ def _text(p, c):
     p.drawText(QRectF(0, 0, 64, 64), Qt.AlignCenter, "T")
 
 
+def _ai_remove(p, c):
+    p.save()
+    p.setPen(QPen(c, 3, Qt.DashLine, Qt.RoundCap))
+    p.drawEllipse(QPointF(28, 34), 18, 18)
+    p.restore()
+    p.setBrush(c)
+    for x, y in ((28, 16), (46, 34), (28, 52), (10, 34)):
+        p.drawEllipse(QPointF(x, y), 4, 4)
+    p.setBrush(Qt.NoBrush)
+    p.drawLine(QPointF(44, 8), QPointF(56, 20))   # sparkle
+    p.drawLine(QPointF(56, 8), QPointF(44, 20))
+
+
 DRAWERS = {"hand": _hand, "move": _move, "brush": _brush, "eraser": _eraser,
-           "crop": _crop, "eyedropper": _eyedropper, "text": _text}
+           "crop": _crop, "eyedropper": _eyedropper, "text": _text,
+           "ai_remove": _ai_remove}
 
 
 def tool_icon(name):

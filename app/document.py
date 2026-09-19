@@ -236,6 +236,16 @@ class Document(QObject):
         self.active = 0
         self.changed.emit("structure")
 
+    def add_result_layer(self, pixels, name, label, hide_others=False):
+        """Put an AI result on a new top layer (one undo step)."""
+        self.push_undo(label)
+        if hide_others:
+            for l in self.layers:
+                l.visible = False
+        self.layers.append(Layer(name, pixels))
+        self.active = len(self.layers) - 1
+        self.changed.emit("structure")
+
     def set_layer_pixels(self, pixels, label, index=None):
         self.push_undo(label)
         self.layers[self.active if index is None else index].pixels = pixels

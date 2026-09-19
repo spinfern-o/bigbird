@@ -2,3 +2,5 @@ PySide6>=6.6
 numpy>=1.26
 Pillow>=10.0
 rawpy>=0.19  # optional: camera RAW support
+onnxruntime-directml>=1.17  # local AI models (uses any GPU on Windows)
+opencv-python-headless>=4.8
