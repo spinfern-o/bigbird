@@ -1,0 +1,71 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-background: #1b1b1e;
+  --color-foreground: #e8e8ec;
+  --color-panel: #252528;
+  --color-panel-raised: #2d2d31;
+  --color-rail: #232326;
+  --color-canvas: #141416;
+  --color-border: #34343a;
+  --color-border-strong: #46464e;
+  --color-muted: #8a8a92;
+  --color-accent: #2f7fe0;
+  --color-accent-hover: #4a93ea;
+  --color-accent-foreground: #ffffff;
+
+  --font-sans: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+
+  --radius: 0.5rem;
+}
+
+html {
+  background-color: var(--color-background);
+}
+
+body {
+  background-color: var(--color-background);
+  color: var(--color-foreground);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Range slider styling to match the desktop app */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: 2px;
+  background: #4a4a52;
+  outline: none;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #e8e8ec;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+input[type="range"]::-webkit-slider-thumb:hover {
+  background: #ffffff;
+}
+input[type="range"]::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: none;
+  border-radius: 50%;
+  background: #e8e8ec;
+  cursor: pointer;
+}
+
+.checkerboard {
+  background-image:
+    linear-gradient(45deg, #2a2a2e 25%, transparent 25%),
+    linear-gradient(-45deg, #2a2a2e 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #2a2a2e 75%),
+    linear-gradient(-45deg, transparent 75%, #2a2a2e 75%);
+  background-size: 20px 20px;
+  background-position: 0 0, 0 10px, 10px -10px, -10px 0;
+}
