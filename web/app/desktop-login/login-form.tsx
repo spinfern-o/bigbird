@@ -8,13 +8,7 @@ import { useState } from "react"
 // Only the credential/existence signal is genericized — naming it would confirm
 // whether an email is registered. Errors the user can act on are passed through.
 function loginErrorMessage(error: unknown): string {
-  const { code, status } = (error ?? {}) as { code?: string; status?: number }
-  if (code === "email_not_confirmed") {
-    return "Please confirm your email address — check your inbox for the link."
-  }
-  if (code === "over_request_rate_limit" || status === 429) {
-    return "Too many attempts. Please wait a moment and try again."
-  }
+  const { code } = (error ?? {}) as { code?: string }
   if (code === "invalid_credentials") {
     return "Invalid email or password."
   }
