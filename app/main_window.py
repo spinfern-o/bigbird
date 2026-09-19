@@ -22,7 +22,7 @@ from .ai import cloud as ai_cloud, models as ai_models, tasks as ai_tasks
 from .ai.connection import CloudConnection
 from .ai.settings_dialog import AISettingsDialog
 from .ai.outline import OutlineEditor, solidify, trace_mask
-from .ai.select import ObjectSelector
+from .ai.object_select import ObjectSelector
 from .ai.panel import AIPanel
 from .ai.runner import run_ai
 
