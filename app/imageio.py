@@ -85,6 +85,7 @@ def resize(arr, w, h, fast=False):
 # --------------------------------------------------------------------------- projects
 
 def save_project(doc, path):
+    """`path` may be a filename or a file-like object (used for cloud saves)."""
     meta = {"version": 1, "width": doc.width, "height": doc.height, "active": doc.active,
             "adjust": doc.adjust, "layers": []}
     with zipfile.ZipFile(path, "w", zipfile.ZIP_STORED) as z:
@@ -99,6 +100,7 @@ def save_project(doc, path):
 
 
 def load_project(path):
+    """`path` may be a filename or a file-like object (used for cloud opens)."""
     from .document import Document, Layer
     with zipfile.ZipFile(path) as z:
         meta = json.loads(z.read("project.json"))
