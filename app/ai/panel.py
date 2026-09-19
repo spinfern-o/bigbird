@@ -51,6 +51,12 @@ class AIPanel(QScrollArea):
         self.refine_btn.setToolTip("Adjust exactly what is kept: drag the dots, click a line "
                                    "to add a dot, or add more points for detail.")
         self.refine_btn.clicked.connect(self.refineOutline)
+        self.edges = QComboBox()
+        self.edges.addItem("Edges: Natural (best for hair and fur)", "natural")
+        self.edges.addItem("Edges: Crisp (best for hands and objects)", "crisp")
+        self.edges.setToolTip("Natural keeps soft, see-through edges like wisps of hair.\n"
+                              "Crisp makes edges solid, so hands and objects don't look faded.")
+        c.lay.addWidget(self.edges)
         c.lay.addWidget(self.bg_btn)
         c.lay.addWidget(self.refine_btn)
         lay.addWidget(c)

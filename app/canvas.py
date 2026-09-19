@@ -80,6 +80,12 @@ class Canvas(QGraphicsView):
         self.float_item.hide()
         self._scene.addItem(self.float_item)
 
+        self.backdrop = QGraphicsPixmapItem()
+        self.backdrop.setTransformationMode(Qt.SmoothTransformation)
+        self.backdrop.setZValue(12)
+        self.backdrop.hide()
+        self._scene.addItem(self.backdrop)
+
         self.crop_shade = QGraphicsPathItem()
         self.crop_shade.setBrush(QColor(0, 0, 0, 150))
         self.crop_shade.setPen(Qt.NoPen)
@@ -459,6 +465,15 @@ class Canvas(QGraphicsView):
         return x, y, w, h
 
     # ------------------------------------------------------------------ move tool
+    def set_backdrop(self, qimg):
+        """Show an image over the canvas (below outlines), or hide it with None."""
+        if qimg is None:
+            self.backdrop.hide()
+            self.backdrop.setPixmap(QPixmap())
+            return
+        self.backdrop.setPixmap(QPixmap.fromImage(qimg))
+        self.backdrop.show()
+
     def set_floating(self, qimg, opacity=1.0):
         if qimg is None:
             self.float_item.hide()

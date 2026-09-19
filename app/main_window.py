@@ -4,7 +4,7 @@ import numpy as np
 
 from PySide6.QtCore import QSize, Qt, QThreadPool, QTimer
 from PySide6.QtGui import QAction, QActionGroup, QColor, QImage, QKeySequence, QPainter, QShortcut
-from PySide6.QtWidgets import (QApplication, QComboBox, QDialog, QDockWidget, QFileDialog, QHBoxLayout,
+from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDialog, QDockWidget, QFileDialog, QHBoxLayout,
                                QInputDialog, QLabel, QMainWindow, QMessageBox, QPushButton,
                                QSizePolicy, QSlider, QStackedWidget, QTabWidget, QToolBar, QVBoxLayout, QWidget)
 
@@ -35,8 +35,9 @@ TOOLS = [
                                  "then press Enter. AI fills in the background."),
 ]
 TOOL_HINTS = {k: tip for k, _, _, tip in TOOLS}
-TOOL_HINTS["ai_refine"] = ("Refine Outline: drag dots to adjust what's kept. Click a line to add "
-                           "a dot, right-click a dot to delete it. Press Enter to apply.")
+TOOL_HINTS["ai_refine"] = ("Refine Outline: the bright area is kept, the darkened area is "
+                           "removed. Drag dots, click a line to add a dot, right-click a dot to "
+                           "delete it. Press Enter to apply.")
 OUTLINE_TOOLS = ("ai_remove", "ai_refine")
 
 CROP_RATIOS = [("Free", None), ("Original", "orig"), ("Square 1:1", 1.0), ("Portrait 4:5", 0.8),
@@ -828,6 +829,10 @@ class MainWindow(QMainWindow):
             b.setToolTip(tip)
             b.clicked.connect(lambda _=False, m=method: self._outline_call(m))
             lay.addWidget(b)
+        self.crisp_chk = QCheckBox("Crisp edges")
+        self.crisp_chk.setToolTip("Make the AI's soft edges solid everywhere, e.g. if a hand "
+                                  "or object looks faded. Leave off for hair and fur.")
+        lay.addWidget(self.crisp_chk)
         self.feather_lbl = QLabel("Edge softness")
         lay.addWidget(self.feather_lbl)
         self.feather = NoWheelSlider(Qt.Horizontal)
@@ -855,7 +860,7 @@ class MainWindow(QMainWindow):
         if self.canvas.outline is not None:
             self._end_outline()
         color = QColor(255, 70, 70) if mode == "ai_remove" else QColor(40, 200, 255)
-        ed = OutlineEditor(self.canvas, color)
+        ed = OutlineEditor(self.canvas, color, dim_outside=mode == "ai_refine")
         ed.on_change = self._outline_changed
         self.canvas.outline = ed
         self._outline_mode = mode
@@ -863,6 +868,7 @@ class MainWindow(QMainWindow):
         self.outline_apply_btn.setText("Apply Outline" if refine else "Remove Object")
         self.feather.setVisible(refine)
         self.feather_lbl.setVisible(refine)
+        self.crisp_chk.setVisible(refine)
         self.canvas.setFocus()
         self._outline_changed()
         return ed
@@ -870,6 +876,7 @@ class MainWindow(QMainWindow):
     def _end_outline(self):
         self.canvas.outline.remove()
         self.canvas.outline = None
+        self.canvas.set_backdrop(None)
 
     def _outline_changed(self):
         ed = self.canvas.outline
@@ -895,7 +902,10 @@ class MainWindow(QMainWindow):
         else:
             layer = self.doc.active_layer()
             px = layer.pixels.copy()
-            px[..., 3] = merge_refined(self._refine_alpha, ed.rasterize(self.feather.value()),
+            base = self._refine_alpha
+            if self.crisp_chk.isChecked():
+                base = ai_tasks.crisp_edges(base)
+            px[..., 3] = merge_refined(base, ed.rasterize(self.feather.value()),
                                        self._refine_tol)
             self.doc.set_layer_pixels(px, "Refine outline")
             self.select_tool("hand")
@@ -906,7 +916,11 @@ class MainWindow(QMainWindow):
             return
         comp = np.array(self.doc.composite())
 
+        crisp = self.ai_panel.edges.currentData() == "crisp"
+
         def done(mask):
+            if crisp:
+                mask = ai_tasks.crisp_edges(mask)
             px = comp.copy()
             px[..., 3] = np.minimum(px[..., 3], mask)
             self.doc.add_result_layer(px, "Cutout", "Remove background", hide_others=True)
@@ -934,6 +948,11 @@ class MainWindow(QMainWindow):
             return
         self.select_tool("ai_refine")
         ed = self._start_outline("ai_refine")
+        # Show the whole, uncut photo so it's clear what is kept and what is removed.
+        full = self.doc.active_layer().pixels.copy()
+        full[..., 3] = 255
+        self.canvas.set_backdrop(imageio.to_qimage(full))
+        self.crisp_chk.setChecked(self.ai_panel.edges.currentData() == "crisp")
         ed.set_polys(polys)
         ed._history.clear()
         self._outline_changed()

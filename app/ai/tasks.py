@@ -19,6 +19,14 @@ def remove_background(rgba):
     return np.clip(prob * 255 + 0.5, 0, 255).astype(np.uint8)
 
 
+def crisp_edges(mask):
+    """Turn the AI's soft, uncertain edges solid (for hands, products, objects).
+    Pixels the AI is at least ~60% sure about become fully kept; below ~20% are removed."""
+    a = mask.astype(np.float32) / 255.0
+    t = np.clip((a - 0.2) / 0.4, 0.0, 1.0)
+    return (t * t * (3 - 2 * t) * 255 + 0.5).astype(np.uint8)
+
+
 def grow_mask(mask, pixels):
     """Expand a mask outward; inpainting works much better with a little margin."""
     k = max(1, int(round(pixels))) * 2 + 1

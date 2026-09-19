@@ -49,9 +49,17 @@ class OutlineItem(QGraphicsItem):
             if len(poly) >= 3:
                 path.addPolygon(QPolygonF([QPointF(x, y) for x, y in poly]))
                 path.closeSubpath()
-        fill = QColor(e.color)
-        fill.setAlpha(70)
-        painter.fillPath(path, fill)
+        if e.dim_outside:
+            # Show what will be removed: darken everything outside the shapes.
+            shade = QPainterPath()
+            shade.setFillRule(Qt.OddEvenFill)
+            shade.addRect(QRectF(0, 0, e.doc_w, e.doc_h))
+            shade.addPath(path)
+            painter.fillPath(shade, QColor(0, 0, 0, 150))
+        else:
+            fill = QColor(e.color)
+            fill.setAlpha(70)
+            painter.fillPath(path, fill)
 
         for i, poly in enumerate(e.polys + ([e.open] if e.open else [])):
             closed = i < len(e.polys)
@@ -74,9 +82,10 @@ class OutlineItem(QGraphicsItem):
 
 
 class OutlineEditor:
-    def __init__(self, canvas, color):
+    def __init__(self, canvas, color, dim_outside=False):
         self.canvas = canvas
         self.color = QColor(color)
+        self.dim_outside = dim_outside
         self.doc_w, self.doc_h = canvas.doc_w, canvas.doc_h
         self.polys = []      # closed shapes: lists of [x, y]
         self.open = []       # shape currently being drawn
