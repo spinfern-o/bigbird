@@ -27,11 +27,9 @@ class AISettingsDialog(QDialog):
         s = cloud.get_settings()
         lay = QVBoxLayout(self)
 
-        lay.addWidget(QLabel("<b>Where should heavy AI run?</b> (background removal, object "
-                             "selection, filling removed areas)"))
+        lay.addWidget(QLabel("<b>Where should heavy AI run?</b> (background removal and object selection)"))
         self.local = QRadioButton("This computer: free and private, works offline")
-        self.remote = QRadioButton("My NVIDIA cloud GPU (Brev) when it's on: fast on any "
-                                   "laptop, and enables Fill Removed Area")
+        self.remote = QRadioButton("My NVIDIA cloud GPU (Brev) when it's on: accelerate local AI on any laptop")
         group = QButtonGroup(self)
         group.addButton(self.local)
         group.addButton(self.remote)
