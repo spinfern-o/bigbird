@@ -231,7 +231,7 @@ _LOCAL_RULES: tuple[tuple[tuple[str, ...], str, int, str], ...] = (
     (("less saturated", "desaturate", "reduce saturation"),
      "saturation", -25, "saturation"),
     (("black and white", "black & white", "grayscale", "greyscale"),
-     "saturation", -100, "black_and_white"),
+     "saturation", -200, "black_and_white"),
     (("more vibrant", "increase vibrance", "boost vibrance"),
      "vibrance", 30, "vibrance"),
     (("recover highlights", "lower highlights", "reduce highlights"),
@@ -350,7 +350,24 @@ class SmartEditRouter:
                         and decision.route == LOCAL_EDIT
                         and any(w in prompt.lower() for w in ("fill", "gap", "hole"))
                     ):
-                        return _fallback_route(prompt, context)
+                        decision = _fallback_route(prompt, context)
+        if context.has_selection and decision.route == LOCAL_EDIT:
+            return RouteDecision(
+                GPU_GENERATE,
+                "selection_edit",
+                "Selection-specific edits use GPU precision for now.",
+                max(0.8, decision.confidence),
+                source="policy",
+            )
+        return decision
+                    if context.has_selection and decision.route == LOCAL_EDIT:
+                        return RouteDecision(
+                            GPU_GENERATE,
+                            "selection_edit",
+                            "Selection-specific edits use GPU precision for now.",
+                            max(0.8, decision.confidence),
+                            source="policy",
+                        )
                     return decision
             except Exception:
                 # Routing must never make editing unavailable.  A broken/missing local
