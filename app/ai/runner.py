@@ -36,7 +36,7 @@ class _Job(QRunnable):
             pass
 
 
-def run_ai(parent, model_keys, title, busy_text, fn, on_done):
+def run_ai(parent, model_keys, title, busy_text, fn, on_done, place_override=None):
     """Download any missing models (with a cancellable progress bar), then run fn()
     in the background and call on_done(result) on the UI thread."""
     missing = [k for k in model_keys if not models.is_downloaded(k)]
@@ -51,9 +51,9 @@ def run_ai(parent, model_keys, title, busy_text, fn, on_done):
         if r != QMessageBox.Yes:
             return
         _download_then(parent, missing, title,
-                       lambda: _run(parent, title, busy_text, fn, on_done))
+                       lambda: _run(parent, title, busy_text, fn, on_done, place_override))
     else:
-        _run(parent, title, busy_text, fn, on_done)
+        _run(parent, title, busy_text, fn, on_done, place_override)
 
 
 def _download_then(parent, keys, title, then):
@@ -96,8 +96,8 @@ def _download_then(parent, keys, title, then):
     QThreadPool.globalInstance().start(_Job(work, sig))
 
 
-def _run(parent, title, busy_text, fn, on_done):
-    place = cloud.where() or ("your " + models.device_name())
+def _run(parent, title, busy_text, fn, on_done, place_override=None):
+    place = place_override or cloud.where() or ("your " + models.device_name())
     dlg = QProgressDialog(busy_text + "\n(running on " + place + ")",
                           None, 0, 0, parent)
     dlg.setWindowTitle(title)
