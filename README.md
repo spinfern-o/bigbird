@@ -25,20 +25,22 @@ project.
 
 ## Run it
 
-Launch Phrame by double-clicking **`PhotoForge.bat`**. The first launch creates a virtual environment and
-installs dependencies automatically. You can also drag a photo onto the `.bat` file.
+On macOS, double-click **`Phrame.command`**. If macOS blocks it the first time,
+Control-click it, choose **Open**, then confirm **Open**. The first launch creates
+a virtual environment and installs dependencies automatically.
+
+On Windows, double-click **`PhotoForge.bat`**. You can also drag a photo onto the
+launcher to open it.
 
 Or from a terminal:
 
 ```bash
+# macOS
+./Phrame.command
+
+# Windows
 .venv\Scripts\python main.py
 ```
-
-## Roadmap
-
-Planned work is split into two parallel tracks, **Track A: Selections & AI** and
-**Track B: Pro Editing & Lightroom Features**, with file-ownership rules so both
-can be built at the same time. See **[ROADMAP.txt](ROADMAP.txt)**.
 
 ## Account sign-in
 

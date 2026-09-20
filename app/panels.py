@@ -221,7 +221,7 @@ class AdjustPanel(QScrollArea):
         lay.addWidget(self.histogram)
 
         row = QHBoxLayout()
-        self.auto_btn = QPushButton("✨ Auto Enhance")
+        self.auto_btn = QPushButton("Auto Enhance")
         self.auto_btn.setObjectName("accent")
         self.auto_btn.setToolTip("Let PhotoForge fix brightness, contrast and color for you.\n"
                                  "You can fine-tune the result with the sliders below.")
@@ -233,7 +233,7 @@ class AdjustPanel(QScrollArea):
         self.auto_btn.clicked.connect(self.autoRequested)
         self.reset_btn.clicked.connect(self.resetRequested)
 
-        self.match_btn = QPushButton("🎨 Match Style from a Photo…")
+        self.match_btn = QPushButton("Match Style from a Photo…")
         self.match_btn.setToolTip("Pick a photo you like the look of — PhotoForge copies its "
                                   "colours and tone onto this one.\nYou can fine-tune the "
                                   "result with the sliders and the Tone Curve afterwards.")
