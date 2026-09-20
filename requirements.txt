@@ -2,5 +2,6 @@ PySide6>=6.6
 numpy>=1.26
 Pillow>=10.0
 rawpy>=0.19  # optional: camera RAW support
-onnxruntime-directml>=1.17  # local AI models (uses any GPU on Windows)
+onnxruntime-directml>=1.17; sys_platform == "win32"  # local AI models on Windows
+onnxruntime>=1.17; sys_platform != "win32"  # portable CPU runtime for non-Windows development
 opencv-python-headless>=4.8

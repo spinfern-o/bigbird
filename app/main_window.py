@@ -14,6 +14,7 @@ from .canvas import Canvas, ToolState
 from .cloud_dialogs import CloudProjectsDialog, run_cloud
 from . import cloud_projects
 from .dialogs import ExportDialog, NewImageDialog, ResizeDialog, TextDialog
+from .filmstrip import FilmstripWidget
 from .matchstyle import MatchStyleDialog
 from .document import Document
 from .icons import tool_icon
@@ -87,9 +88,9 @@ class WelcomeWidget(QWidget):
         lay.addSpacing(24)
         row = QHBoxLayout()
         row.addStretch(1)
-        open_btn = QPushButton("📂  Open a Photo…")
+        open_btn = QPushButton("Open a Photo…")
         open_btn.setObjectName("bigAccent")
-        new_btn = QPushButton("＋  New Blank Canvas…")
+        new_btn = QPushButton("New Blank Canvas…")
         new_btn.setObjectName("big")
         open_btn.clicked.connect(main.open_file)
         new_btn.clicked.connect(main.new_image)
@@ -108,7 +109,7 @@ class WelcomeWidget(QWidget):
         steps = QHBoxLayout()
         steps.addStretch(1)
         for n, head, body in (("1", "Open", "Open a photo (JPG, PNG, even camera RAW)."),
-                              ("2", "Pick a look", "Click a Preset or ✨ Auto Enhance."),
+                              ("2", "Pick a look", "Click a Preset or Auto Enhance."),
                               ("3", "Fine-tune", "Drag sliders. Hover anything for help."),
                               ("4", "Export", "Save a copy — your original is never changed.")):
             card = QLabel(f"<div style='font-size:22px; color:#6cb4ff'><b>{n}</b></div>"
@@ -147,7 +148,21 @@ class MainWindow(SelectionActions, QMainWindow):
         self.center = QStackedWidget()
         self.center.addWidget(self.welcome)
         self.center.addWidget(self.canvas)
-        self.setCentralWidget(self.center)
+        self.filmstrip = FilmstripWidget()
+        self.filmstrip.pathActivated.connect(self.load_path)
+        self.filmstrip.openRequested.connect(self.open_file)
+        self.filmstrip.exportRequested.connect(self.export_image)
+        self.filmstrip.set_paths(self._recent)
+        self.filmstrip.hide()
+
+        workspace = QWidget()
+        workspace.setObjectName("editorWorkspace")
+        workspace_lay = QVBoxLayout(workspace)
+        workspace_lay.setContentsMargins(0, 0, 0, 0)
+        workspace_lay.setSpacing(0)
+        workspace_lay.addWidget(self.center, 1)
+        workspace_lay.addWidget(self.filmstrip)
+        self.setCentralWidget(workspace)
 
         self.adjust_panel = AdjustPanel()
         self.layers_panel = LayersPanel(self)
@@ -156,12 +171,13 @@ class MainWindow(SelectionActions, QMainWindow):
         self.tabs.addTab(self.layers_panel, "Layers")
         self.ai_panel = AIPanel()
         self.tabs.addTab(self.ai_panel, "AI")
-        self.tabs.setMinimumWidth(372)
-        self.tabs.setMaximumWidth(420)
+        self.tabs.setFixedWidth(360)
         side = QDockWidget("Panels", self)
+        side.setObjectName("inspectorDock")
         side.setWidget(self.tabs)
         side.setTitleBarWidget(QWidget())
         side.setFeatures(QDockWidget.NoDockWidgetFeatures)
+        side.setFixedWidth(360)
         self.addDockWidget(Qt.RightDockWidgetArea, side)
 
         self._thumb_timer = QTimer(self, singleShot=True, interval=400)
@@ -215,7 +231,7 @@ class MainWindow(SelectionActions, QMainWindow):
         self.a_redo = A("Redo", self.redo, "Ctrl+Y", "Redo (Ctrl+Y)")
         QShortcut(QKeySequence("Ctrl+Shift+Z"), self, self.redo)
         self.a_reset = A("Reset All Adjustments", self.reset_adjustments)
-        self.a_auto = A("✨ Auto Enhance", self.auto_enhance, "Ctrl+Shift+A",
+        self.a_auto = A("Auto Enhance", self.auto_enhance, "Ctrl+Shift+A",
                         "Automatically improve brightness, contrast and color")
         self.a_match = A("Match Style from a Photo…", self.match_style, "Ctrl+Shift+M",
                          "Copy the colours and tone of a photo you like onto this one")
@@ -330,7 +346,8 @@ class MainWindow(SelectionActions, QMainWindow):
         tb = QToolBar("Tools")
         tb.setObjectName("toolsBar")
         tb.setMovable(False)
-        tb.setIconSize(QSize(22, 22))   # 13 tools have to fit without scrolling
+        tb.setFixedWidth(72)
+        tb.setIconSize(QSize(20, 20))   # 13 tools have to fit without scrolling
         tb.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
         for key, a in self.tool_actions.items():
             if key in TOOLBAR_HIDDEN:
@@ -342,15 +359,28 @@ class MainWindow(SelectionActions, QMainWindow):
 
         # Top: main actions
         top = QToolBar("Main")
+        top.setObjectName("mainBar")
         top.setMovable(False)
         top.setToolButtonStyle(Qt.ToolButtonTextOnly)
+        brand_mark = QLabel("P")
+        brand_mark.setObjectName("brandMark")
+        brand_mark.setAlignment(Qt.AlignCenter)
+        brand_mark.setFixedSize(24, 24)
+        brand_name = QLabel(APP_NAME)
+        brand_name.setObjectName("brandName")
+        top.addWidget(brand_mark)
+        top.addWidget(brand_name)
+        top.addSeparator()
         for a in (self.a_open, self.a_export, None, self.a_undo, self.a_redo, None,
                   self.a_zout, self.a_fit, self.a_zin, None, self.a_compare, self.a_auto):
             top.addSeparator() if a is None else top.addAction(a)
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         top.addWidget(spacer)
-        self.login_btn = QPushButton("Log in")
+        self.doc_meta_lbl = QLabel("No document")
+        self.doc_meta_lbl.setObjectName("documentMeta")
+        top.addWidget(self.doc_meta_lbl)
+        self.login_btn = QPushButton("Sign in")
         self.login_btn.setObjectName("loginBtn")
         self.login_btn.setToolTip("Sign in to your PhotoForge account in your web browser")
         self.login_btn.clicked.connect(self._on_login_clicked)
@@ -486,7 +516,7 @@ class MainWindow(SelectionActions, QMainWindow):
             self.login_btn.setToolTip(f"Signed in as {email}. Click to log out.")
             self.statusBar().showMessage(f"Signed in as {email}.", 6000)
         else:
-            self.login_btn.setText("Log in")
+            self.login_btn.setText("Sign in")
             self.login_btn.setToolTip("Sign in to your PhotoForge account in your web browser")
 
     def _build_statusbar(self):
@@ -494,9 +524,14 @@ class MainWindow(SelectionActions, QMainWindow):
         self.hint_lbl = QLabel()
         self.size_lbl = QLabel()
         self.zoom_lbl = QLabel()
+        self.color_space_lbl = QLabel("sRGB")
+        self.local_lbl = QLabel("Local-first")
+        self.local_lbl.setObjectName("localStatus")
         sb.addWidget(self.hint_lbl, 1)
+        sb.addPermanentWidget(self.color_space_lbl)
         sb.addPermanentWidget(self.size_lbl)
         sb.addPermanentWidget(self.zoom_lbl)
+        sb.addPermanentWidget(self.local_lbl)
 
     def _connect(self):
         c = self.canvas
@@ -550,10 +585,12 @@ class MainWindow(SelectionActions, QMainWindow):
             doc.changed.connect(self._doc_changed)
             doc.historyChanged.connect(self._history_changed)
             self.center.setCurrentWidget(self.canvas)
+            self.filmstrip.show()
             self.canvas.doc_w = self.canvas.doc_h = 0  # force a fit on first display
         else:
             self.canvas.clear()
             self.center.setCurrentWidget(self.welcome)
+            self.filmstrip.hide()
         self.a_compare.setChecked(False)
         self.renderer.show_original = False
         self.renderer.set_document(doc)
@@ -569,8 +606,10 @@ class MainWindow(SelectionActions, QMainWindow):
         self._ratio_changed(self.ratio_combo.currentIndex())
         self._history_changed()
         self._update_labels()
+        current_path = getattr(doc, "path", None) if doc else None
+        self.filmstrip.set_paths(self._recent, current_path)
         if doc:
-            self.hint_lbl.setText("Tip: try a Preset on the right, or click ✨ Auto Enhance. "
+            self.hint_lbl.setText("Tip: try a Preset on the right, or click Auto Enhance. "
                                   "Scroll to zoom, hold Space and drag to pan.")
 
     def _doc_changed(self, kind):
@@ -610,11 +649,13 @@ class MainWindow(SelectionActions, QMainWindow):
         d = self.doc
         if not d:
             self.setWindowTitle(APP_NAME)
+            self.doc_meta_lbl.setText("No document")
             self.size_lbl.setText("")
             self.zoom_lbl.setText("")
             return
         name = getattr(d, "display_name", "Untitled")
         self.setWindowTitle(f"{name}{' •' if d.dirty else ''} — {APP_NAME}")
+        self.doc_meta_lbl.setText(f"{name}  ·  {d.width * d.height / 1_000_000:.1f} MP")
         self.size_lbl.setText(f"  {d.width} × {d.height} px  ·  {len(d.layers)} layer"
                               f"{'s' if len(d.layers) != 1 else ''}  ")
 
@@ -1070,6 +1111,9 @@ class MainWindow(SelectionActions, QMainWindow):
         if existing != self._recent:
             self._recent = existing
             self.settings.setValue("files/recent", self._recent)
+        if hasattr(self, "filmstrip"):
+            current = getattr(self.doc, "path", None) if self.doc else None
+            self.filmstrip.set_paths(self._recent, current)
         if not self._recent:
             empty = self.recent_menu.addAction("No recent files")
             empty.setEnabled(False)
@@ -1112,6 +1156,7 @@ class MainWindow(SelectionActions, QMainWindow):
                 doc.path = path
             else:
                 doc = Document.from_image(imageio.load_image(path))
+                doc.path = path
             doc.display_name = os.path.basename(path)
         except Exception as e:
             QApplication.restoreOverrideCursor()
@@ -1718,12 +1763,12 @@ class MainWindow(SelectionActions, QMainWindow):
 <h3>Welcome to PhotoForge!</h3>
 <p><b>Quick fixes (like Lightroom)</b> — the <b>Adjust</b> tab on the right:</p>
 <ul>
-<li><b>✨ Auto Enhance</b> fixes brightness and color in one click.</li>
+<li><b>Auto Enhance</b> fixes brightness and color in one click.</li>
 <li><b>Presets</b> apply a complete look. The thumbnails preview your own photo.</li>
 <li><b>Sliders</b> fine-tune things. Hover a slider to learn what it does; double-click its name to reset it.</li>
 <li><b>Tone Curve</b> (in the Adjust tab) gives you fine control: drag the line up to
 brighten, down to darken, or pick Red/Green/Blue to shift the colours.</li>
-<li><b>🎨 Match Style from a Photo</b> copies the look of a photo you like onto yours.</li>
+<li><b>Match Style from a Photo</b> copies the look of a photo you like onto yours.</li>
 <li>Press <b>\\</b> to compare before and after.</li>
 </ul>
 <p><b>Change only part of the photo</b> — the <b>Local</b> tab:</p>

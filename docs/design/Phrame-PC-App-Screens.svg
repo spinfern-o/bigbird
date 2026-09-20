@@ -1,0 +1,312 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="3000" height="1960" viewBox="0 0 3000 1960" role="img" aria-labelledby="title desc">
+  <title id="title">Phrame — PC application screens</title>
+  <desc id="desc">Three editable desktop application artboards: editor workspace, project library, and AI edit flow.</desc>
+
+  <defs>
+    <style><![CDATA[
+      .board-label { font-family: Inter, Arial, sans-serif; font-size: 16px; font-weight: 700; letter-spacing: 2.4px; fill: #8b96a8; }
+      .sans { font-family: Inter, Arial, sans-serif; }
+      .serif { font-family: Newsreader, Georgia, 'Times New Roman', serif; }
+      .ink { fill: #07111f; }
+      .muted { fill: #647184; }
+      .white { fill: #ffffff; }
+      .green { fill: #0aa174; }
+      .green-stroke { stroke: #0aa174; }
+      .hairline { stroke: #e5e4df; stroke-width: 1; }
+      .tiny { font-size: 11px; }
+      .small { font-size: 13px; }
+      .body { font-size: 16px; }
+      .label { font-size: 12px; font-weight: 700; letter-spacing: 1.4px; }
+      .button-text { font-size: 15px; font-weight: 700; }
+      .card-title { font-size: 19px; font-weight: 600; }
+      .section-title { font-size: 64px; font-weight: 500; letter-spacing: -2.2px; }
+      .hero-title { font-size: 86px; font-weight: 400; letter-spacing: -3.4px; }
+      .ui-title { font-size: 14px; font-weight: 700; }
+      .ui-body { font-size: 12px; }
+    ]]></style>
+
+    <linearGradient id="mintGlow" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#e4fff4" stop-opacity="0.95"/>
+      <stop offset="0.52" stop-color="#f7fbf8" stop-opacity="0.4"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="photoSky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#7db3c7"/>
+      <stop offset="0.56" stop-color="#c6d4cf"/>
+      <stop offset="1" stop-color="#f1caa5"/>
+    </linearGradient>
+    <linearGradient id="photoHill" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#294e46"/>
+      <stop offset="1" stop-color="#0f2929"/>
+    </linearGradient>
+    <linearGradient id="photoWater" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#628e96"/>
+      <stop offset="1" stop-color="#1f4e58"/>
+    </linearGradient>
+    <linearGradient id="darkPanel" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b2a25"/>
+      <stop offset="1" stop-color="#081714"/>
+    </linearGradient>
+    <linearGradient id="warmPhoto" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#e6ad7f"/>
+      <stop offset="0.48" stop-color="#9d6654"/>
+      <stop offset="1" stop-color="#303e52"/>
+    </linearGradient>
+    <linearGradient id="lavenderPhoto" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#b9b0d8"/>
+      <stop offset="0.58" stop-color="#7b719a"/>
+      <stop offset="1" stop-color="#252840"/>
+    </linearGradient>
+    <radialGradient id="securityGlow" cx="46%" cy="42%" r="70%">
+      <stop offset="0" stop-color="#36d39e" stop-opacity="0.3"/>
+      <stop offset="0.62" stop-color="#0e3b31" stop-opacity="0.12"/>
+      <stop offset="1" stop-color="#06120f" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="18" result="blur"/>
+      <feOffset in="blur" dx="0" dy="14" result="offsetBlur"/>
+      <feFlood flood-color="#0b1825" flood-opacity="0.10" result="shadowColor"/>
+      <feComposite in="shadowColor" in2="offsetBlur" operator="in" result="shadow"/>
+      <feMerge><feMergeNode in="shadow"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="smallShadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="7" result="blur"/>
+      <feOffset in="blur" dx="0" dy="5" result="offsetBlur"/>
+      <feFlood flood-color="#0b1825" flood-opacity="0.12" result="shadowColor"/>
+      <feComposite in="shadowColor" in2="offsetBlur" operator="in" result="shadow"/>
+      <feMerge><feMergeNode in="shadow"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <clipPath id="editorImageClip"><rect x="310" y="144" width="784" height="572" rx="4"/></clipPath>
+    <clipPath id="aiImageClip"><rect x="64" y="112" width="850" height="710" rx="10"/></clipPath>
+    <clipPath id="featureImageClip"><rect x="760" y="165" width="586" height="610" rx="20"/></clipPath>
+
+    <g id="phrame-mark">
+      <path d="M0 15V0h15" fill="none" stroke="#0aa174" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M1 1l14 14" fill="none" stroke="#0aa174" stroke-width="4" stroke-linecap="round"/>
+    </g>
+    <g id="check-icon">
+      <circle cx="12" cy="12" r="11" fill="#dff8ee"/>
+      <path d="M7 12.5l3.2 3.1L17.4 8" fill="none" stroke="#0a966d" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+    <g id="spark-icon">
+      <path d="M12 1l2.4 7.6L22 11l-7.6 2.4L12 21l-2.4-7.6L2 11l7.6-2.4z" fill="#74e0bc"/>
+    </g>
+  </defs>
+
+  <rect width="3000" height="1960" fill="#11161f"/>
+
+  <!-- ================================================================ -->
+  <!-- SLIDE 02 — DESKTOP EDITOR                                       -->
+  <!-- ================================================================ -->
+  <text x="40" y="44" class="board-label">01 / EDITOR WORKSPACE</text>
+  <g id="slide-02-editor-workspace" transform="translate(40 70)">
+    <rect width="1440" height="900" rx="8" fill="#111317"/>
+    <rect width="1440" height="38" rx="8" fill="#1e2126"/>
+    <circle cx="20" cy="19" r="5" fill="#ff6c67"/><circle cx="38" cy="19" r="5" fill="#ffc45b"/><circle cx="56" cy="19" r="5" fill="#52ce78"/>
+    <text x="82" y="24" class="sans" font-size="12" font-weight="700" fill="#e1e4e9">Phrame</text>
+    <text x="650" y="24" class="sans" font-size="11" fill="#aab0ba">Kyoto Evening — Edited</text>
+    <text x="1215" y="24" class="sans" font-size="11" fill="#9299a6">100%</text>
+    <rect x="1280" y="7" width="72" height="24" rx="7" fill="#2b3037"/><text x="1299" y="23" class="sans" font-size="10" fill="#e6e9ed">Export</text>
+    <rect x="1360" y="7" width="64" height="24" rx="7" fill="#0a9b70"/><text x="1375" y="23" class="sans" font-size="10" font-weight="700" fill="#fff">Share</text>
+
+    <rect y="38" width="1440" height="42" fill="#25282e"/>
+    <text x="22" y="64" class="sans" font-size="11" fill="#aeb4bd">File</text><text x="59" y="64" class="sans" font-size="11" fill="#aeb4bd">Edit</text><text x="95" y="64" class="sans" font-size="11" fill="#aeb4bd">Image</text><text x="143" y="64" class="sans" font-size="11" fill="#aeb4bd">Layer</text><text x="188" y="64" class="sans" font-size="11" fill="#aeb4bd">Select</text>
+    <line x1="247" y1="50" x2="247" y2="68" stroke="#3a3e45"/>
+    <text x="268" y="64" class="sans" font-size="11" fill="#e4e7eb">Move</text><text x="318" y="64" class="sans" font-size="11" fill="#89909c">Auto-select</text>
+    <rect x="383" y="52" width="11" height="11" rx="2" fill="none" stroke="#68707c"/>
+    <text x="409" y="64" class="sans" font-size="11" fill="#89909c">Show transform controls</text>
+
+    <rect y="80" width="62" height="716" fill="#1d2025"/>
+    <g fill="none" stroke="#aab0ba" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M22 108l17 17M22 125l17-17"/><rect x="20" y="151" width="21" height="18" rx="2"/><path d="M20 201h21M30.5 190v22"/><circle cx="30" cy="242" r="10"/><path d="M21 280l19-14M21 266l19 14"/><path d="M20 312h21v21H20zM25 307v31M15 317h31"/><path d="M20 372c8-12 14-12 22 0-7 8-15 8-22 0z"/><path d="M21 409c11-8 18 0 18 9s-8 15-18 19"/><path d="M21 472h20M31 462v20"/>
+    </g>
+    <rect x="12" y="92" width="38" height="44" rx="8" fill="#30343a"/>
+    <path d="M22 108l17 17M22 125l17-17" fill="none" stroke="#70d9b4" stroke-width="1.8"/>
+    <rect x="62" y="80" width="1050" height="716" fill="#14171b"/>
+    <rect x="88" y="103" width="998" height="646" rx="8" fill="#0f1114" stroke="#2b2e34"/>
+    <g clip-path="url(#editorImageClip)">
+      <rect x="310" y="144" width="784" height="572" fill="url(#photoSky)"/>
+      <circle cx="919" cy="247" r="54" fill="#ffe8b7" opacity="0.88"/>
+      <path d="M245 487c99-75 203-95 325-50 128 47 187-17 310-22 84-4 153 30 247 91v246H245z" fill="url(#photoHill)"/>
+      <path d="M248 558c145-35 240 9 358 42 125 35 301-30 521-4v160H248z" fill="url(#photoWater)"/>
+      <path d="M732 610l34-112 31 112z" fill="#111b1b"/><rect x="762" y="610" width="7" height="58" fill="#111b1b"/>
+      <path d="M766 501c31 16 59 20 87 4" fill="none" stroke="#ffffff" stroke-opacity="0.35" stroke-width="2"/>
+      <ellipse cx="766" cy="604" rx="58" ry="13" fill="#fff" opacity="0.12"/>
+    </g>
+    <rect x="310" y="144" width="784" height="572" fill="none" stroke="#424750"/>
+
+    <rect x="1112" y="80" width="328" height="716" fill="#202329"/>
+    <rect x="1112" y="80" width="328" height="44" fill="#262a30"/>
+    <text x="1132" y="107" class="sans" font-size="12" font-weight="700" fill="#f0f2f4">Edit</text>
+    <text x="1192" y="107" class="sans" font-size="12" fill="#8e96a2">Layers</text>
+    <text x="1260" y="107" class="sans" font-size="12" fill="#8e96a2">History</text>
+    <line x1="1130" y1="123" x2="1170" y2="123" stroke="#36c896" stroke-width="2"/>
+    <text x="1132" y="154" class="sans" font-size="10" letter-spacing="1" fill="#7f8792">HISTOGRAM</text>
+    <path d="M1132 222L1145 211 1156 217 1168 198 1180 208 1194 178 1207 188 1221 150 1235 185 1249 166 1265 192 1281 182 1294 211 1308 199 1324 219 1342 208 1355 222z" fill="#9e8ee5" opacity="0.55"/>
+    <path d="M1132 222L1146 216 1164 203 1180 212 1196 196 1212 207 1230 183 1246 202 1264 193 1282 209 1301 200 1322 216 1340 206 1356 222z" fill="#41cf9a" opacity="0.46"/>
+    <line x1="1132" y1="232" x2="1417" y2="232" stroke="#373b42"/>
+    <text x="1132" y="260" class="sans" font-size="12" font-weight="700" fill="#e4e7eb">Light</text><text x="1380" y="260" class="sans" font-size="11" fill="#7f8792">Reset</text>
+    <g class="sans" font-size="11" fill="#aeb4bd">
+      <text x="1132" y="294">Exposure</text><text x="1390" y="294">+0.34</text><line x1="1198" y1="290" x2="1370" y2="290" stroke="#484d55" stroke-width="4" stroke-linecap="round"/><line x1="1283" y1="290" x2="1323" y2="290" stroke="#38c895" stroke-width="4" stroke-linecap="round"/><circle cx="1323" cy="290" r="5" fill="#38c895"/>
+      <text x="1132" y="333">Contrast</text><text x="1397" y="333">+8</text><line x1="1198" y1="329" x2="1370" y2="329" stroke="#484d55" stroke-width="4" stroke-linecap="round"/><circle cx="1292" cy="329" r="5" fill="#38c895"/>
+      <text x="1132" y="372">Highlights</text><text x="1390" y="372">−18</text><line x1="1198" y1="368" x2="1370" y2="368" stroke="#484d55" stroke-width="4" stroke-linecap="round"/><circle cx="1268" cy="368" r="5" fill="#38c895"/>
+      <text x="1132" y="411">Shadows</text><text x="1392" y="411">+12</text><line x1="1198" y1="407" x2="1370" y2="407" stroke="#484d55" stroke-width="4" stroke-linecap="round"/><circle cx="1302" cy="407" r="5" fill="#38c895"/>
+    </g>
+    <line x1="1132" y1="438" x2="1417" y2="438" stroke="#373b42"/>
+    <text x="1132" y="469" class="sans" font-size="12" font-weight="700" fill="#e4e7eb">Color</text><text x="1390" y="469" class="sans" font-size="11" fill="#7f8792">⌃</text>
+    <text x="1132" y="507" class="sans" font-size="11" fill="#aeb4bd">Temperature</text><line x1="1218" y1="503" x2="1370" y2="503" stroke="url(#photoSky)" stroke-width="5" stroke-linecap="round"/><circle cx="1301" cy="503" r="5" fill="#fff"/>
+    <text x="1132" y="546" class="sans" font-size="11" fill="#aeb4bd">Vibrance</text><line x1="1198" y1="542" x2="1370" y2="542" stroke="#484d55" stroke-width="4" stroke-linecap="round"/><circle cx="1310" cy="542" r="5" fill="#38c895"/>
+    <line x1="1132" y1="575" x2="1417" y2="575" stroke="#373b42"/>
+    <rect x="1132" y="598" width="285" height="72" rx="10" fill="#18382f" stroke="#25584a"/>
+    <use href="#spark-icon" x="1149" y="616"/>
+    <text x="1183" y="622" class="sans" font-size="10" letter-spacing="1" fill="#72d9b6">AI SUGGESTION</text>
+    <text x="1183" y="644" class="sans" font-size="12" font-weight="700" fill="#eef7f4">Protect the warm highlights</text>
+    <rect x="1319" y="681" width="98" height="31" rx="8" fill="#0a9b70"/><text x="1344" y="701" class="sans" font-size="10" font-weight="700" fill="#fff">Apply</text>
+
+    <rect y="796" width="1440" height="86" fill="#1a1d22"/>
+    <text x="20" y="823" class="sans" font-size="10" font-weight="700" letter-spacing="1.2" fill="#7f8792">RECENT PHOTOS</text>
+    <g transform="translate(18 832)">
+      <rect width="90" height="40" rx="4" fill="url(#photoSky)" stroke="#39cf9a" stroke-width="2"/>
+      <rect x="101" width="90" height="40" rx="4" fill="url(#warmPhoto)"/>
+      <rect x="202" width="90" height="40" rx="4" fill="url(#lavenderPhoto)"/>
+      <rect x="303" width="90" height="40" rx="4" fill="#746b57"/>
+      <rect x="404" width="90" height="40" rx="4" fill="#3a6675"/>
+      <rect x="505" width="90" height="40" rx="4" fill="#755b62"/>
+    </g>
+    <rect y="882" width="1440" height="18" fill="#24272c"/>
+    <text x="18" y="895" class="sans" font-size="9" fill="#7f8792">Kyoto Evening.prm</text><text x="1285" y="895" class="sans" font-size="9" fill="#7f8792">6048 × 4024 · 16-bit · Adobe RGB</text>
+  </g>
+
+  <!-- ================================================================ -->
+  <!-- SLIDE 03 — PROJECT LIBRARY                                      -->
+  <!-- ================================================================ -->
+  <text x="1520" y="44" class="board-label">02 / PROJECT LIBRARY</text>
+  <g id="slide-03-project-library" transform="translate(1520 70)">
+    <rect width="1440" height="900" rx="8" fill="#f8f8f5"/>
+    <rect width="226" height="900" rx="8" fill="#10211d"/>
+    <text x="30" y="52" class="sans white" font-size="24" font-weight="800">Phrame</text><use href="#phrame-mark" x="116" y="33"/>
+    <g class="sans" font-size="14">
+      <rect x="16" y="92" width="194" height="46" rx="10" fill="#1a3a31"/>
+      <text x="30" y="121" fill="#dff8ef" font-weight="700">▦  Library</text>
+      <text x="30" y="171" fill="#9db0aa">◫  Shared</text>
+      <text x="30" y="215" fill="#9db0aa">☆  Favorites</text>
+      <text x="30" y="259" fill="#9db0aa">⌁  Cloud jobs</text>
+    </g>
+    <text x="30" y="322" class="sans" font-size="10" letter-spacing="1.6" fill="#718880">COLLECTIONS</text>
+    <g class="sans" font-size="13" fill="#a7b9b3">
+      <text x="30" y="359">Editorial</text><text x="188" y="359">12</text>
+      <text x="30" y="397">Travel</text><text x="188" y="397">38</text>
+      <text x="30" y="435">Portraits</text><text x="188" y="435">21</text>
+      <text x="30" y="473">Film scans</text><text x="188" y="473">9</text>
+    </g>
+    <rect x="18" y="822" width="190" height="56" rx="12" fill="#172e28"/>
+    <circle cx="46" cy="850" r="16" fill="#d9a879"/><text x="40" y="855" class="sans" font-size="12" font-weight="800" fill="#20242a">LW</text>
+    <text x="70" y="847" class="sans" font-size="12" font-weight="700" fill="#e5efeb">Larry’s workspace</text><text x="70" y="864" class="sans" font-size="10" fill="#7d968e">Local · synced</text>
+
+    <text x="274" y="68" class="serif ink" font-size="46" font-weight="500">Your work, in one place.</text>
+    <text x="274" y="101" class="sans muted" font-size="15">Continue a project, import a folder, or start a focused edit.</text>
+    <rect x="1178" y="39" width="218" height="50" rx="12" fill="#0aa174"/><text x="1215" y="70" class="sans white" font-size="14" font-weight="700">＋ Create new project</text>
+
+    <rect x="274" y="136" width="1122" height="58" rx="12" fill="#fff" stroke="#e1e2dd"/>
+    <circle cx="304" cy="165" r="9" fill="none" stroke="#788493" stroke-width="1.7"/><path d="M311 172l7 7" stroke="#788493" stroke-width="1.7"/>
+    <text x="330" y="171" class="sans" font-size="14" fill="#88929e">Search projects, filenames, cameras, or tags</text>
+    <text x="1316" y="171" class="sans" font-size="12" fill="#657180">⌘ K</text>
+
+    <text x="274" y="244" class="sans ink" font-size="14" font-weight="800">CONTINUE EDITING</text>
+    <g id="recent-project-cards">
+      <g transform="translate(274 270)">
+        <rect width="350" height="242" rx="16" fill="#fff" stroke="#dedfdb"/>
+        <rect x="12" y="12" width="326" height="158" rx="11" fill="url(#photoSky)"/>
+        <circle cx="266" cy="54" r="21" fill="#ffe7b8"/><path d="M12 120c65-48 123-17 180 2 54 18 95 0 146 21v27H12z" fill="#183932"/>
+        <text x="18" y="200" class="sans ink" font-size="15" font-weight="700">Kyoto Evening</text><text x="18" y="221" class="sans muted" font-size="11">Edited 12 minutes ago · 4 photos</text>
+        <circle cx="320" cy="201" r="13" fill="#ecf8f3"/><text x="315" y="205" class="sans" font-size="11" fill="#0a9069">↗</text>
+      </g>
+      <g transform="translate(646 270)">
+        <rect width="350" height="242" rx="16" fill="#fff" stroke="#dedfdb"/>
+        <rect x="12" y="12" width="326" height="158" rx="11" fill="url(#warmPhoto)"/>
+        <circle cx="174" cy="78" r="35" fill="#4b2d2d" opacity="0.7"/><path d="M142 170c7-49 21-70 40-70s36 24 43 70z" fill="#242938" opacity="0.9"/>
+        <text x="18" y="200" class="sans ink" font-size="15" font-weight="700">Studio Portraits</text><text x="18" y="221" class="sans muted" font-size="11">Yesterday · 18 photos</text>
+        <circle cx="320" cy="201" r="13" fill="#ecf8f3"/><text x="315" y="205" class="sans" font-size="11" fill="#0a9069">↗</text>
+      </g>
+      <g transform="translate(1018 270)">
+        <rect width="378" height="242" rx="16" fill="#fff" stroke="#dedfdb"/>
+        <rect x="12" y="12" width="354" height="158" rx="11" fill="url(#lavenderPhoto)"/>
+        <path d="M12 128c75-20 133-13 191 1 58 14 101-16 163-9v50H12z" fill="#25283a"/>
+        <text x="18" y="200" class="sans ink" font-size="15" font-weight="700">Blue Hour</text><text x="18" y="221" class="sans muted" font-size="11">Sep 18 · 9 photos</text>
+        <circle cx="346" cy="201" r="13" fill="#ecf8f3"/><text x="341" y="205" class="sans" font-size="11" fill="#0a9069">↗</text>
+      </g>
+    </g>
+
+    <text x="274" y="566" class="sans ink" font-size="14" font-weight="800">RECENT IMPORTS</text>
+    <rect x="274" y="588" width="1122" height="238" rx="16" fill="#fff" stroke="#dedfdb"/>
+    <g class="sans">
+      <text x="302" y="624" font-size="11" letter-spacing="1" fill="#8a949f">NAME</text><text x="927" y="624" font-size="11" letter-spacing="1" fill="#8a949f">FORMAT</text><text x="1044" y="624" font-size="11" letter-spacing="1" fill="#8a949f">IMPORTED</text><text x="1266" y="624" font-size="11" letter-spacing="1" fill="#8a949f">STATUS</text>
+      <line x1="298" y1="641" x2="1372" y2="641" stroke="#e8e8e4"/>
+      <rect x="302" y="658" width="52" height="38" rx="5" fill="url(#photoSky)"/><text x="372" y="677" font-size="13" font-weight="700" fill="#17212e">DSC_8421.NEF</text><text x="372" y="694" font-size="10" fill="#87919d">Nikon Z8 · 45.7 MP</text><text x="927" y="684" font-size="12" fill="#5d6977">RAW</text><text x="1044" y="684" font-size="12" fill="#5d6977">Today, 2:42 PM</text><rect x="1266" y="666" width="92" height="26" rx="13" fill="#e7f8f1"/><text x="1287" y="683" font-size="11" font-weight="700" fill="#0a8d67">Ready</text>
+      <line x1="298" y1="712" x2="1372" y2="712" stroke="#eeeeea"/>
+      <rect x="302" y="729" width="52" height="38" rx="5" fill="url(#warmPhoto)"/><text x="372" y="748" font-size="13" font-weight="700" fill="#17212e">PORTRAIT_14.CR3</text><text x="372" y="765" font-size="10" fill="#87919d">Canon R5 · 45 MP</text><text x="927" y="755" font-size="12" fill="#5d6977">RAW</text><text x="1044" y="755" font-size="12" fill="#5d6977">Yesterday, 8:16 PM</text><rect x="1266" y="737" width="92" height="26" rx="13" fill="#e7f8f1"/><text x="1287" y="754" font-size="11" font-weight="700" fill="#0a8d67">Ready</text>
+    </g>
+    <text x="274" y="864" class="sans muted" font-size="12">24.3 GB used locally</text><rect x="400" y="856" width="230" height="6" rx="3" fill="#dedfda"/><rect x="400" y="856" width="96" height="6" rx="3" fill="#0aa174"/>
+  </g>
+
+  <!-- ================================================================ -->
+  <!-- SLIDE 04 — AI EDIT FLOW                                         -->
+  <!-- ================================================================ -->
+  <text x="780" y="994" class="board-label">03 / AI EDIT FLOW</text>
+  <g id="slide-04-ai-edit-flow" transform="translate(780 1020)">
+    <rect width="1440" height="900" rx="8" fill="#111418"/>
+    <rect width="1440" height="56" rx="8" fill="#1c2025"/>
+    <text x="24" y="35" class="sans white" font-size="19" font-weight="800">Phrame</text><use href="#phrame-mark" x="93" y="20" transform="scale(.8)"/>
+    <text x="570" y="34" class="sans" font-size="12" fill="#a8afb9">AI Edit / Kyoto Evening</text>
+    <rect x="1240" y="13" width="82" height="31" rx="8" fill="#2b3036"/><text x="1262" y="33" class="sans" font-size="11" fill="#dce0e5">Cancel</text>
+    <rect x="1331" y="13" width="86" height="31" rx="8" fill="#0a9d71"/><text x="1352" y="33" class="sans" font-size="11" font-weight="700" fill="#fff">Apply</text>
+
+    <g clip-path="url(#aiImageClip)">
+      <rect x="64" y="112" width="850" height="710" fill="url(#photoSky)"/>
+      <circle cx="730" cy="241" r="62" fill="#ffe4af"/>
+      <path d="M20 500c158-92 290-52 405-9 109 41 197-22 311-28 98-5 160 37 240 99v300H20z" fill="url(#photoHill)"/>
+      <path d="M20 604c173-27 295 22 431 49 137 27 300-36 525-5v214H20z" fill="url(#photoWater)"/>
+      <path d="M430 691l43-138 39 138z" fill="#101b1a"/><rect x="469" y="690" width="9" height="68" fill="#101b1a"/>
+      <g fill="#d4b69f">
+        <circle cx="281" cy="604" r="11"/><path d="M269 660l7-43h13l8 43z"/><circle cx="333" cy="615" r="10"/><path d="M322 663l6-37h12l7 37z"/>
+      </g>
+      <path d="M249 570c45-33 91-25 125 9 24 24 30 66 8 99-20 30-59 37-105 17-41-18-58-91-28-125z" fill="#4ee1ad" opacity="0.15" stroke="#63e5b8" stroke-width="3" stroke-dasharray="9 7"/>
+    </g>
+    <rect x="64" y="112" width="850" height="710" rx="10" fill="none" stroke="#353a41"/>
+    <rect x="79" y="129" width="156" height="34" rx="9" fill="#0f1418" opacity="0.82"/><text x="96" y="151" class="sans" font-size="11" fill="#e4e8eb">Selected area · 12%</text>
+
+    <rect x="952" y="92" width="440" height="744" rx="18" fill="#f7f7f4"/>
+    <text x="984" y="138" class="serif ink" font-size="35" font-weight="500">Describe the change.</text>
+    <text x="984" y="169" class="sans muted" font-size="13">Phrame will only modify the selected region.</text>
+    <rect x="984" y="198" width="376" height="112" rx="13" fill="#fff" stroke="#d9dbd6"/>
+    <text x="1004" y="230" class="sans ink" font-size="14">Remove the two people and rebuild the</text>
+    <text x="1004" y="252" class="sans ink" font-size="14">shoreline naturally. Preserve the reflected light.</text>
+    <rect x="1004" y="270" width="109" height="25" rx="12" fill="#e8f8f2"/><text x="1022" y="287" class="sans" font-size="10" font-weight="700" fill="#0b8f68">Selection aware</text>
+    <rect x="1250" y="266" width="94" height="31" rx="8" fill="#0a9d71"/><text x="1271" y="286" class="sans" font-size="11" font-weight="700" fill="#fff">Generate</text>
+
+    <text x="984" y="354" class="sans ink" font-size="12" font-weight="800" letter-spacing="1">VARIATIONS</text>
+    <g transform="translate(984 374)">
+      <rect width="180" height="132" rx="12" fill="#fff" stroke="#0aa174" stroke-width="2"/>
+      <rect x="8" y="8" width="164" height="86" rx="8" fill="url(#photoWater)"/>
+      <path d="M8 57c37-9 75 7 102 12 28 5 40-12 62-7v32H8z" fill="#315f63"/>
+      <circle cx="20" cy="112" r="8" fill="#0aa174"/><path d="M16 112l3 3 5-6" fill="none" stroke="#fff" stroke-width="1.5"/>
+      <text x="37" y="116" class="sans ink" font-size="11" font-weight="700">Variation 1</text>
+      <rect x="196" width="180" height="132" rx="12" fill="#fff" stroke="#dedfdb"/>
+      <rect x="204" y="8" width="164" height="86" rx="8" fill="#2e6469"/>
+      <path d="M204 62c44-8 73 11 109 4 20-4 35-13 55-7v35H204z" fill="#42747a"/>
+      <text x="216" y="116" class="sans muted" font-size="11">Variation 2</text>
+    </g>
+
+    <line x1="984" y1="536" x2="1360" y2="536" stroke="#dedfda"/>
+    <text x="984" y="574" class="sans ink" font-size="12" font-weight="800" letter-spacing="1">OUTPUT SETTINGS</text>
+    <text x="984" y="612" class="sans muted" font-size="12">Result</text><rect x="1164" y="590" width="196" height="36" rx="9" fill="#fff" stroke="#dedfda"/><text x="1180" y="613" class="sans ink" font-size="12">New editable layer</text><text x="1338" y="613" class="sans muted" font-size="12">⌄</text>
+    <text x="984" y="660" class="sans muted" font-size="12">Edge blending</text><line x1="1083" y1="656" x2="1300" y2="656" stroke="#ced2cf" stroke-width="5" stroke-linecap="round"/><line x1="1083" y1="656" x2="1240" y2="656" stroke="#0aa174" stroke-width="5" stroke-linecap="round"/><circle cx="1240" cy="656" r="7" fill="#0aa174"/><text x="1324" y="660" class="sans ink" font-size="12">72</text>
+    <rect x="984" y="704" width="376" height="86" rx="12" fill="#eaf8f3" stroke="#c6eadd"/>
+    <use href="#spark-icon" x="1002" y="722"/>
+    <text x="1034" y="730" class="sans" font-size="11" font-weight="800" fill="#0a7859">Nondestructive by default</text>
+    <text x="1034" y="752" class="sans" font-size="11" fill="#4f6c62">Your original pixels stay untouched. You can refine</text><text x="1034" y="769" class="sans" font-size="11" fill="#4f6c62">or remove this result from the layer stack later.</text>
+    <text x="64" y="861" class="sans" font-size="11" fill="#77808c">Brush size 148 px</text><text x="1260" y="861" class="sans" font-size="11" fill="#77808c">Cloud GPU · 8 sec</text>
+  </g>
+
+</svg>

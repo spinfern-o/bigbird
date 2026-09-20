@@ -1,6 +1,29 @@
 """PhotoForge — a beginner-friendly photo editor. Run: python main.py [photo]"""
 import ctypes
+import importlib.util
+import os
+from pathlib import Path
 import sys
+
+# A shell or VS Code session can retain Qt paths from Homebrew, XQuartz, or a
+# Linux-oriented setup.  On macOS those paths make Qt try to initialize xcb
+# instead of its native Cocoa platform plugin and QApplication aborts before a
+# window can be created. Point Qt directly at the plugins bundled with the
+# active PySide6 installation before importing any Qt modules.
+if sys.platform == "darwin":
+    for variable in ("DYLD_LIBRARY_PATH", "DYLD_FRAMEWORK_PATH"):
+        os.environ.pop(variable, None)
+
+    pyside_spec = importlib.util.find_spec("PySide6")
+    if pyside_spec and pyside_spec.submodule_search_locations:
+        pyside_dir = Path(next(iter(pyside_spec.submodule_search_locations)))
+        plugin_dir = pyside_dir / "Qt" / "plugins"
+        platform_dir = plugin_dir / "platforms"
+        if (platform_dir / "libqcocoa.dylib").is_file():
+            os.environ["QT_PLUGIN_PATH"] = str(plugin_dir)
+            os.environ["QT_QPA_PLATFORM_PLUGIN_PATH"] = str(platform_dir)
+
+    os.environ["QT_QPA_PLATFORM"] = "cocoa"
 
 from PySide6.QtWidgets import QApplication
 
