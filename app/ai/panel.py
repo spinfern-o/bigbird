@@ -1,7 +1,7 @@
 """The "AI" tab in the right-hand panel."""
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import (QComboBox, QFrame, QHBoxLayout, QLabel, QPushButton, QScrollArea,
-                               QSpinBox, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QComboBox, QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton,
+                               QScrollArea, QSpinBox, QVBoxLayout, QWidget)
 
 from . import cloud, models
 
@@ -22,6 +22,8 @@ class _Card(QFrame):
 
 
 class AIPanel(QScrollArea):
+    smartEdit = Signal(str)
+    fillRemoved = Signal()
     removeBackground = Signal()
     refineOutline = Signal()
     removeObject = Signal()
@@ -36,6 +38,40 @@ class AIPanel(QScrollArea):
         lay = QVBoxLayout(root)
         lay.setContentsMargins(8, 8, 8, 8)
         lay.setSpacing(10)
+
+        smart = _Card(
+            "Smart Edit",
+            "Describe the result. PhotoForge keeps simple edits local and sends only "
+            "generative work to the GPU.",
+        )
+        self.smart_prompt = QLineEdit()
+        self.smart_prompt.setPlaceholderText("e.g. make it warmer, replace the sky with sunset…")
+        self.smart_prompt.setToolTip(
+            "Describe the edit in plain English. SmartRoute chooses local or GPU automatically."
+        )
+        self.smart_apply = QPushButton("Apply")
+        self.smart_apply.setObjectName("accent")
+        self.smart_apply.setToolTip("Route this edit automatically and apply it.")
+        self.smart_apply.clicked.connect(lambda: self.smartEdit.emit(self.smart_prompt.text().strip()))
+        self.smart_prompt.returnPressed.connect(
+            lambda: self.smartEdit.emit(self.smart_prompt.text().strip())
+        )
+        self.fill_removed_btn = QPushButton("Fill Removed Area")
+        self.fill_removed_btn.setToolTip(
+            "Reconstruct the transparent gap left by Remove Objects using the GPU."
+        )
+        self.fill_removed_btn.setEnabled(False)
+        self.fill_removed_btn.clicked.connect(self.fillRemoved)
+        row = QHBoxLayout()
+        row.addWidget(self.smart_prompt, 1)
+        row.addWidget(self.smart_apply)
+        smart.lay.addLayout(row)
+        smart.lay.addWidget(self.fill_removed_btn)
+        self.route_status = QLabel("SmartRoute is ready.")
+        self.route_status.setWordWrap(True)
+        self.route_status.setObjectName("hintLabel")
+        smart.lay.addWidget(self.route_status)
+        lay.addWidget(smart)
 
         intro = QLabel("These AI tools run on your own computer. They're free and private, "
                        "and each model downloads once the first time you use it.")
@@ -109,6 +145,12 @@ class AIPanel(QScrollArea):
         lay.addStretch(1)
         self.setWidget(root)
         self.refresh()
+
+    def set_route_status(self, text):
+        self.route_status.setText(text)
+
+    def set_fill_available(self, available):
+        self.fill_removed_btn.setEnabled(bool(available))
 
     def refresh(self):
         if cloud.use_cloud():
