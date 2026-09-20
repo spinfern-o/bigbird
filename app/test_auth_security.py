@@ -5,6 +5,12 @@ Run from the repository root:
 """
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+# Allow `python app/test_...py` as the docstring above describes.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 import json
 import os
 import tempfile
