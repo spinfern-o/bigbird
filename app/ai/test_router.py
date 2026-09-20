@@ -41,6 +41,12 @@ def main():
     check("content insertion uses GPU", d.route == GPU_GENERATE)
 
     d = router.route(
+        "make this warmer",
+        RouterContext(has_selection=True, selection_fraction=0.2),
+    )
+    check("selection-constrained edit uses precision GPU route", d.route == GPU_GENERATE)
+
+    d = router.route(
         "fill the removed area",
         RouterContext(transparent_fraction=0.12),
     )
