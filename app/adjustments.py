@@ -5,7 +5,7 @@ All settings are integers (mostly -100..100) so they map directly onto sliders.
 """
 import numpy as np
 
-from . import curves
+from . import curves, local_adjust
 
 # (section, key, label, min, max, tooltip)
 SLIDERS = [
@@ -83,6 +83,7 @@ MIXER_DEFAULTS = {mixer_key(b[0], c[0]): 0 for b in MIXER_BANDS for c in MIXER_C
 DEFAULTS = {key: 0 for _, key, *_ in SLIDERS}
 DEFAULTS.update(MIXER_DEFAULTS)
 DEFAULTS.update(curves.DEFAULTS)     # tone curves: () means "straight line"
+DEFAULTS[local_adjust.KEY] = ()      # graduated / radial filters
 
 PRESETS = {
     "Original": {},
@@ -133,8 +134,10 @@ def preset_settings(name):
 
 
 def is_default(s):
-    return (all(s.get(k, 0) == 0 for k in DEFAULTS if k not in curves.DEFAULTS)
-            and all(curves.is_identity(s.get(k, ())) for k in curves.DEFAULTS))
+    skip = set(curves.DEFAULTS) | {local_adjust.KEY}
+    return (all(s.get(k, 0) == 0 for k in DEFAULTS if k not in skip)
+            and all(curves.is_identity(s.get(k, ())) for k in curves.DEFAULTS)
+            and not any(local_adjust.is_active(l) for l in s.get(local_adjust.KEY, ())))
 
 
 def normalized(s):
@@ -143,6 +146,8 @@ def normalized(s):
     for k in curves.DEFAULTS:
         if k in out:
             out[k] = curves.normalize(out[k])
+    if local_adjust.KEY in out:
+        out[local_adjust.KEY] = local_adjust.normalize(out[local_adjust.KEY])
     return out
 
 
@@ -266,6 +271,31 @@ def apply(rgba, s, detail_scale=1.0):
     detail_scale is (current resolution / full resolution); it keeps pixel-sized
     effects like sharpening roughly consistent between preview and export.
     """
+    if is_default(s):
+        return rgba
+    out = _apply_global(rgba, s, detail_scale)
+    return _apply_locals(out, s, detail_scale)
+
+
+def _apply_locals(rgba, s, detail_scale):
+    """Blend in each graduated / radial filter on top of the global result."""
+    h, w = rgba.shape[:2]
+    for loc in s.get(local_adjust.KEY, ()):
+        if not local_adjust.is_active(loc):
+            continue
+        local_settings = dict(DEFAULTS)
+        local_settings.update(loc["settings"])
+        if is_default(local_settings):
+            continue
+        edited = _apply_global(rgba, local_settings, detail_scale)
+        m = local_adjust.mask(loc, h, w)[..., None]
+        blended = rgba[..., :3].astype(np.float32) * (1 - m) + edited[..., :3] * m
+        rgba = rgba.copy()
+        rgba[..., :3] = np.clip(blended + 0.5, 0, 255).astype(np.uint8)
+    return rgba
+
+
+def _apply_global(rgba, s, detail_scale=1.0):
     if is_default(s):
         return rgba
     g = lambda k: s.get(k, 0) / 100.0

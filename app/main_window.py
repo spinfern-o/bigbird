@@ -17,6 +17,9 @@ from .dialogs import ExportDialog, NewImageDialog, ResizeDialog, TextDialog
 from .matchstyle import MatchStyleDialog
 from .document import Document
 from .icons import tool_icon
+from . import local_adjust
+from .local_adjust import LocalTool
+from .local_panel import LocalPanel
 from .panels import AdjustPanel, ColorButton, LayersPanel, NoWheelSlider
 from .renderer import Renderer
 from .selection import apply_masked
@@ -48,11 +51,18 @@ TOOLS.insert(TOOLS.index(next(t for t in TOOLS if t[0] == "eraser")) + 1, SELECT
 TOOLS.insert(TOOLS.index(next(t for t in TOOLS if t[0] == "heal")) + 1,
              ("clone", "Clone", "S", "Clone Stamp (S): hold Alt and click a clean spot to copy "
                                      "from, then brush over what you want to cover."))
+TOOLS += [
+    ("gradient", "Graduated", "G", "Graduated Filter (G): drag across the photo, then use the "
+                                   "Local tab to brighten or darken just that side."),
+    ("radial", "Radial", "U", "Radial Filter (U): drag an oval around something, then use the "
+                              "Local tab to change only what is inside it."),
+]
 TOOL_HINTS = {k: tip for k, _, _, tip in TOOLS}
 TOOL_HINTS["ai_refine"] = ("Refine Outline: the bright area is kept, the darkened area is "
                            "removed. Drag dots, click a line to add a dot, right-click a dot to "
                            "delete it. Press Enter to apply.")
 OUTLINE_TOOLS = ("ai_remove", "ai_refine")
+LOCAL_TOOLS = {"gradient": "linear", "radial": "radial"}
 
 CROP_RATIOS = [("Free", None), ("Original", "orig"), ("Square 1:1", 1.0), ("Portrait 4:5", 0.8),
                ("Photo 3:2", 1.5), ("Photo 2:3", 2 / 3), ("Wide 16:9", 16 / 9), ("Tall 9:16", 9 / 16)]
@@ -166,6 +176,7 @@ class MainWindow(SelectionActions, QMainWindow):
         self._connect()
         self._build_ai()
         self._build_selection()
+        self._build_local()
         self.set_document(None)
         self.select_tool("hand")
 
@@ -386,6 +397,14 @@ class MainWindow(SelectionActions, QMainWindow):
         slider(lay, "Strength", 1, 100, 100, "How strongly each stroke paints or erases.",
                lambda x: setattr(self.state, "strength", x / 100), "%")
 
+        self.opt_group_tools["local"] = tuple(LOCAL_TOOLS)
+        lay = group("local")
+        self.opt_groups["local"].setVisible(False)
+        local_hint = QLabel("Drag on the photo to place the filter, then open the Local tab on "
+                            "the right to change that area. Drag the dots to adjust it.")
+        local_hint.setObjectName("hintLabel")
+        lay.addWidget(local_hint)
+
         self.opt_group_tools["clone"] = ("clone",)
         lay = group("clone")
         self.opt_groups["clone"].setVisible(False)
@@ -535,6 +554,10 @@ class MainWindow(SelectionActions, QMainWindow):
         self.layers_panel.set_document(doc)
         self.adjust_panel.sync(doc.adjust if doc else adjustments.DEFAULTS)
         self.adjust_panel.setEnabled(doc is not None)
+        self._local_index = -1
+        self._local_tool = None
+        self.local_panel.setEnabled(doc is not None)
+        self._sync_local()
         for a in self.doc_actions + list(self.tool_actions.values()):
             a.setEnabled(doc is not None)
         self._ratio_changed(self.ratio_combo.currentIndex())
@@ -557,12 +580,14 @@ class MainWindow(SelectionActions, QMainWindow):
         if kind == "adjust":
             self.renderer.update()
             self.adjust_panel.sync(self.doc.adjust)
+            self._sync_local()
             return
         self.renderer.invalidate()
         if kind in ("structure", "pixels", "all"):
             self.layers_panel.rebuild()
         if kind == "all":
             self.adjust_panel.sync(self.doc.adjust)
+            self._sync_local()
             self._ratio_changed(self.ratio_combo.currentIndex())
         self._update_labels()
 
@@ -591,6 +616,111 @@ class MainWindow(SelectionActions, QMainWindow):
         layer = self.doc.active_layer()
         self.hint_lbl.setText(f"Selected layer: {layer.name}. Brush, eraser, move and filters "
                               "work on this layer.")
+
+    # ================================================================== local adjustments
+    def _build_local(self):
+        """The Local tab: graduated and radial filters."""
+        self._local_index = -1
+        self._local_tool = None
+        self.local_panel = LocalPanel()
+        self.tabs.addTab(self.local_panel, "Local")
+        lp = self.local_panel
+        lp.addRequested.connect(self._local_add)
+        lp.chosen.connect(self._local_chosen)
+        lp.settingChanged.connect(self._local_setting)
+        lp.optionChanged.connect(self._local_option)
+        lp.deleteRequested.connect(lambda: self._local_replace(self._local_index, None,
+                                                               True, "Delete local filter"))
+        lp.hint.connect(self.hint_lbl.setText)
+
+    def _locals(self):
+        return tuple(self.doc.adjust.get(local_adjust.KEY, ())) if self.doc else ()
+
+    def _start_local_tool(self, kind):
+        if self.canvas.outline is not None:
+            self._end_outline()
+        self._local_tool = LocalTool(self.canvas, self.doc.width, self.doc.height, kind,
+                                     self._locals, self._local_changed, self._local_created,
+                                     self._local_chosen)
+        self._local_tool.set_index(self._local_index)
+        self.canvas.outline = self._local_tool
+        self._outline_mode = "local"
+        self.canvas.setFocus()
+        self.tabs.setCurrentWidget(self.local_panel)
+
+    def _local_add(self, kind):
+        """The + buttons in the Local tab just arm the matching tool."""
+        self.select_tool("gradient" if kind == "linear" else "radial")
+        self.hint_lbl.setText("Now drag on the photo: " + (
+            "from the side you want to change towards where the effect should fade out."
+            if kind == "linear" else "outwards from the middle of what you want to change."))
+
+    def _local_created(self, loc):
+        settings = local_adjust.with_added(self.doc.adjust, loc)
+        index = len(settings[local_adjust.KEY]) - 1
+        # Same coalesce key as the drag that follows, so placing a filter is one undo step.
+        self.doc.set_adjustments(settings, "Add " + local_adjust.LABELS[loc["type"]].lower(),
+                                 coalesce=f"local{index}")
+        self._local_index = index
+        self._sync_local()
+
+    def _local_changed(self, index, loc, final):
+        """The tool moved or resized a filter (or the Delete key removed it)."""
+        if loc is None:
+            self._local_replace(index, None, True, "Delete local filter")
+        elif final:
+            self._sync_local()      # the drag already wrote every step
+        else:
+            self._local_replace(index, loc, False, "Move local filter")
+
+    def _local_replace(self, index, loc, final, label):
+        if not self.doc or not 0 <= index < len(self._locals()):
+            return
+        settings = local_adjust.replaced(self.doc.adjust, index, loc)
+        self.doc.set_adjustments(settings, label, coalesce=None if final else f"local{index}")
+        if loc is None:
+            self._local_index = min(index, len(self._locals()) - 1)
+        self._sync_local()
+
+    def _local_chosen(self, index):
+        if 0 <= index < len(self._locals()):
+            self._local_index = index
+            if self._local_tool is not None:
+                self._local_tool.set_index(index)
+            self._sync_local()
+
+    def _local_setting(self, key, value):
+        index = self._local_index
+        locs = self._locals()
+        if not 0 <= index < len(locs):
+            return
+        settings = dict(locs[index].get("settings") or {})
+        settings[key] = value
+        loc = local_adjust.edited(locs[index], settings=settings)
+        self.doc.set_adjustments(local_adjust.replaced(self.doc.adjust, index, loc),
+                                 adjustments.setting_label(key) + " (local)",
+                                 coalesce=f"local:{index}:{key}")
+        self._sync_local()
+
+    def _local_option(self, name, value):
+        index = self._local_index
+        locs = self._locals()
+        if not 0 <= index < len(locs):
+            return
+        loc = local_adjust.edited(locs[index],
+                                  **{name: bool(value) if name == "invert" else int(value)})
+        label = "Flip local filter" if name == "invert" else "Local filter softness"
+        self.doc.set_adjustments(local_adjust.replaced(self.doc.adjust, index, loc), label,
+                                 coalesce=None if name == "invert" else f"local:{index}:feather")
+        self._sync_local()
+
+    def _sync_local(self):
+        locs = self._locals()
+        if self._local_index >= len(locs):
+            self._local_index = len(locs) - 1
+        self.local_panel.sync(self.doc.adjust if self.doc else None, self._local_index)
+        if self._local_tool is not None:
+            self._local_tool.set_index(self._local_index)
 
     # ================================================================== layer masks
     def _mask_action(self, cmd):
@@ -672,6 +802,10 @@ class MainWindow(SelectionActions, QMainWindow):
         if key == "ai_remove" and self.doc:
             self._start_select()
         self._on_tool_selected(key)
+        if key in LOCAL_TOOLS and self.doc:
+            self._start_local_tool(LOCAL_TOOLS[key])
+        elif self._local_tool is not None and self.canvas.outline is not self._local_tool:
+            self._local_tool = None
 
     def _clear_clone_source(self):
         self.state.clone_src = None
