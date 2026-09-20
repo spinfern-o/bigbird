@@ -95,15 +95,21 @@ class CloudBackend:
     # ------------------------------------------------------------- encoding
     @staticmethod
     def _encode(rgba):
-        """Downscale to CLOUD_MAX_EDGE and return (base64 PNG, original h, w)."""
+        """Downscale an RGB(A) image or 2-D uint8 mask and return base64 PNG."""
         h, w = rgba.shape[:2]
         scale = min(1.0, CLOUD_MAX_EDGE / max(h, w))
         if scale < 1.0:
             rgba = cv2.resize(rgba, (max(1, int(w * scale)), max(1, int(h * scale))),
                               interpolation=cv2.INTER_AREA)
-        # cv2 encodes BGR(A); our arrays are RGB(A).
-        bgr = cv2.cvtColor(rgba, cv2.COLOR_RGBA2BGRA if rgba.shape[2] == 4 else cv2.COLOR_RGB2BGR)
-        ok, buf = cv2.imencode(".png", bgr)
+        if rgba.ndim == 2:
+            encoded = np.ascontiguousarray(rgba)
+        else:
+            # cv2 encodes BGR(A); our arrays are RGB(A).
+            encoded = cv2.cvtColor(
+                rgba,
+                cv2.COLOR_RGBA2BGRA if rgba.shape[2] == 4 else cv2.COLOR_RGB2BGR,
+            )
+        ok, buf = cv2.imencode(".png", encoded)
         if not ok:
             raise AIError("That photo could not be prepared for cloud editing.")
         return base64.b64encode(buf.tobytes()).decode(), h, w
