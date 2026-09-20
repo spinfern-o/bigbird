@@ -328,6 +328,34 @@ class SmartEditRouter:
         self.llm = llm or LlamaCppRouter()
         self.classifier = classifier
 
+    @staticmethod
+    def _apply_policy(
+        prompt: str,
+        context: RouterContext,
+        decision: RouteDecision,
+    ) -> RouteDecision:
+        lower = prompt.lower()
+
+        # Missing-pixel reconstruction must never be downgraded to a slider edit.
+        if (
+            context.transparent_fraction > 0.0005
+            and decision.route == LOCAL_EDIT
+            and any(w in lower for w in ("fill", "gap", "hole", "removed area"))
+        ):
+            return _fallback_route(prompt, context)
+
+        # Phase 1 keeps selection-constrained edits on the precision path until
+        # selection-scoped deterministic adjustments are implemented.
+        if context.has_selection and decision.route == LOCAL_EDIT:
+            return RouteDecision(
+                GPU_GENERATE,
+                "selection_edit",
+                "Selection-specific edits use GPU precision for now.",
+                max(0.8, decision.confidence),
+                source="policy",
+            )
+        return decision
+
     def route(self, prompt: str, context: RouterContext | None = None) -> RouteDecision:
         context = context or RouterContext()
         prompt = (prompt or "").strip()
@@ -343,35 +371,10 @@ class SmartEditRouter:
                 payload = _extract_json(classify(prompt, context))
                 decision = _normalise_llm_decision(payload)
                 if decision is not None:
-                    # Never allow an LLM to claim a missing-pixel fill is a cheap local
-                    # slider edit.  Routing policy remains under application control.
-                    if (
-                        context.transparent_fraction > 0.0005
-                        and decision.route == LOCAL_EDIT
-                        and any(w in prompt.lower() for w in ("fill", "gap", "hole"))
-                    ):
-                        decision = _fallback_route(prompt, context)
-        if context.has_selection and decision.route == LOCAL_EDIT:
-            return RouteDecision(
-                GPU_GENERATE,
-                "selection_edit",
-                "Selection-specific edits use GPU precision for now.",
-                max(0.8, decision.confidence),
-                source="policy",
-            )
-        return decision
-                    if context.has_selection and decision.route == LOCAL_EDIT:
-                        return RouteDecision(
-                            GPU_GENERATE,
-                            "selection_edit",
-                            "Selection-specific edits use GPU precision for now.",
-                            max(0.8, decision.confidence),
-                            source="policy",
-                        )
-                    return decision
+                    return self._apply_policy(prompt, context, decision)
             except Exception:
-                # Routing must never make editing unavailable.  A broken/missing local
+                # Routing must never make editing unavailable. A broken/missing local
                 # classifier simply falls back to explicit application rules.
                 pass
 
-        return _fallback_route(prompt, context)
+        return self._apply_policy(prompt, context, _fallback_route(prompt, context))
