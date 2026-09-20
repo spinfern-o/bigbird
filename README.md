@@ -46,7 +46,7 @@ Phrame now shows the **account screen first** every time the desktop app
 starts. Login happens in the user's default web browser (Safari, Chrome, Edge,
 etc.), so credentials never live in the desktop app:
 
-1. Launch PhotoForge and click **Log in**.
+1. Launch Phrame and click **Log in**.
 2. The app opens `https://www.phrame.tech/desktop-login` in the default browser.
 3. Sign in there. If you need an account, use **Create one** on that page.
 4. After creating an account, close the browser tab, return to Phrame, and
