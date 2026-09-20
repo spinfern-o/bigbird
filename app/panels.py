@@ -2,10 +2,10 @@
 import numpy as np
 from PySide6.QtCore import QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QIcon, QImage, QPainter, QPainterPath, QPixmap
-from PySide6.QtWidgets import (QAbstractItemView, QColorDialog, QComboBox, QFrame, QGridLayout,
-                               QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QPushButton,
-                               QScrollArea, QSizePolicy, QSlider, QStackedWidget, QToolButton,
-                               QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QColorDialog, QComboBox, QFrame,
+                               QGridLayout, QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
+                               QPushButton, QScrollArea, QSizePolicy, QSlider, QStackedWidget,
+                               QToolButton, QVBoxLayout, QWidget)
 
 from . import adjustments, curves, imageio
 from .curves import CurveEditor
@@ -407,7 +407,16 @@ class AdjustPanel(QScrollArea):
             b.setIcon(QIcon(QPixmap.fromImage(imageio.to_qimage(out))))
 
 
+def mask_qimage(mask):
+    """A layer mask (HxW uint8) as a grey RGBA QImage for thumbnails."""
+    grey = np.dstack([mask, mask, mask, np.full(mask.shape, 255, np.uint8)])
+    return imageio.to_qimage(grey)
+
+
 class LayersPanel(QWidget):
+    maskAction = Signal(str)         # "add" / "from_selection" / "invert" / "delete" / "apply"
+    maskPaintToggled = Signal(bool)
+
     def __init__(self, main):
         super().__init__()
         self.main = main
@@ -437,6 +446,7 @@ class LayersPanel(QWidget):
         props.addWidget(self.opacity, 1, 1)
         props.addWidget(self.opacity_lbl, 1, 2)
         lay.addLayout(props)
+        lay.addWidget(self._build_mask_box())
 
         self.list = QListWidget()
         self.list.setIconSize(QSize(56, 56))
@@ -458,6 +468,7 @@ class LayersPanel(QWidget):
             self.actions[key] = b
         lay.addLayout(btns)
 
+        self.mask_paint.toggled.connect(self.maskPaintToggled)
         self.list.currentRowChanged.connect(self._row_changed)
         self.list.itemChanged.connect(self._item_changed)
         self.opacity.valueChanged.connect(self._opacity_changed)
@@ -469,20 +480,87 @@ class LayersPanel(QWidget):
         self.setEnabled(doc is not None)
         self.rebuild()
 
+    def _build_mask_box(self):
+        """Layer mask controls: a mask hides parts of a layer without erasing them."""
+        box = QFrame()
+        box.setObjectName("maskBox")
+        outer = QVBoxLayout(box)
+        outer.setContentsMargins(6, 4, 6, 6)
+        outer.setSpacing(4)
+        tip = QLabel("A mask hides parts of this layer instead of deleting them — paint it "
+                     "back whenever you like.")
+        tip.setWordWrap(True)
+        tip.setObjectName("hintLabel")
+        outer.addWidget(tip)
+
+        row = QHBoxLayout()
+        row.setSpacing(6)
+        self.mask_thumb = QLabel()
+        self.mask_thumb.setFixedSize(44, 44)
+        self.mask_thumb.setAlignment(Qt.AlignCenter)
+        self.mask_thumb.setObjectName("maskThumb")
+        self.mask_thumb.setToolTip("The mask: white areas of the layer show, black areas hide.")
+        row.addWidget(self.mask_thumb)
+        self.mask_btns = {}
+        grid = QGridLayout()
+        grid.setSpacing(4)
+        for i, (key, text, tip_text) in enumerate((
+                ("add", "Add Mask", "Give this layer a mask. Nothing changes until you paint "
+                                    "on it or use Hide."),
+                ("from_selection", "From Selection", "Turn the current selection into a mask: "
+                                                     "what you selected stays visible."),
+                ("invert", "Invert", "Swap what is hidden and what is shown."),
+                ("delete", "Delete", "Throw the mask away — the whole layer comes back."),
+                ("apply", "Apply", "Make the mask permanent: the hidden parts are erased for "
+                                   "good and the mask disappears."))):
+            b = QPushButton(text)
+            b.setToolTip(tip_text)
+            b.setStatusTip(tip_text)
+            b.clicked.connect(lambda _=False, k=key: self.maskAction.emit(k))
+            grid.addWidget(b, i // 3, i % 3)
+            self.mask_btns[key] = b
+        row.addLayout(grid, 1)
+        outer.addLayout(row)
+
+        self.mask_paint = QCheckBox("Paint on the mask (Brush hides · Eraser brings back)")
+        self.mask_paint.setToolTip("While this is ticked the Brush paints the mask instead of "
+                                   "the photo: brush over something to hide it, then use the "
+                                   "Eraser to bring it back.")
+        outer.addWidget(self.mask_paint)
+        return box
+
     def _index_for_row(self, row):
         return len(self.doc.layers) - 1 - row
 
     def _thumb(self, layer):
+        """The list icon: the layer, plus its mask beside it when it has one."""
         if layer.thumb_src is not layer.pixels:
             t = imageio.thumbnail(layer.pixels, 56)
-            layer.thumb = QIcon(QPixmap.fromImage(imageio.to_qimage(t)))
+            layer.thumb = QPixmap.fromImage(imageio.to_qimage(t))
             layer.thumb_src = layer.pixels
-        return layer.thumb
+        if layer.mask is None:
+            layer.mask_thumb, layer.mask_thumb_src = None, None
+            return QIcon(layer.thumb)
+        if layer.mask_thumb_src is not layer.mask:
+            t = imageio.thumbnail(layer.mask, 56)
+            layer.mask_thumb = QPixmap.fromImage(mask_qimage(t))
+            layer.mask_thumb_src = layer.mask
+        pair = QPixmap(120, 56)
+        pair.fill(Qt.transparent)
+        p = QPainter(pair)
+        p.drawPixmap(0, (56 - layer.thumb.height()) // 2, layer.thumb)
+        p.setPen(QColor(120, 120, 128))
+        p.drawLine(60, 4, 60, 52)
+        p.drawPixmap(64, (56 - layer.mask_thumb.height()) // 2, layer.mask_thumb)
+        p.end()
+        return QIcon(pair)
 
     def rebuild(self):
         self.list.blockSignals(True)
         self.list.clear()
         if self.doc:
+            any_mask = any(l.mask is not None for l in self.doc.layers)
+            self.list.setIconSize(QSize(120 if any_mask else 56, 56))
             for layer in reversed(self.doc.layers):
                 it = QListWidgetItem(self._thumb(layer), layer.name)
                 it.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled | Qt.ItemIsUserCheckable
@@ -504,11 +582,31 @@ class LayersPanel(QWidget):
             self.blend.setCurrentText(layer.blend)
         for w in (self.opacity, self.blend):
             w.blockSignals(False)
+        self._sync_mask(layer)
         if self.doc:
             self.actions["del"].setEnabled(len(self.doc.layers) > 1)
             self.actions["merge"].setEnabled(self.doc.active > 0)
             self.actions["up"].setEnabled(self.doc.active < len(self.doc.layers) - 1)
             self.actions["down"].setEnabled(self.doc.active > 0)
+
+    def _sync_mask(self, layer):
+        has = layer is not None and layer.mask is not None
+        for key, b in self.mask_btns.items():
+            if key == "add":
+                b.setEnabled(layer is not None and not has)
+            elif key == "from_selection":
+                b.setEnabled(layer is not None and self.doc is not None
+                             and self.doc.selection is not None)
+            else:
+                b.setEnabled(has)
+        self.mask_paint.setEnabled(has)
+        if not has and self.mask_paint.isChecked():
+            self.mask_paint.setChecked(False)
+        if has:
+            t = imageio.thumbnail(layer.mask, 40)
+            self.mask_thumb.setPixmap(QPixmap.fromImage(mask_qimage(t)))
+        else:
+            self.mask_thumb.clear()
 
     def _row_changed(self, row):
         if self.doc and row >= 0:

@@ -96,8 +96,15 @@ def save_project(doc, path):
             buf = io.BytesIO()
             Image.fromarray(layer.pixels).save(buf, "PNG", compress_level=1)
             z.writestr(name, buf.getvalue())
-            meta["layers"].append({"name": layer.name, "visible": layer.visible,
-                                   "opacity": layer.opacity, "blend": layer.blend, "file": name})
+            info = {"name": layer.name, "visible": layer.visible, "opacity": layer.opacity,
+                    "blend": layer.blend, "file": name}
+            if layer.mask is not None:
+                mask_name = f"mask{i}.png"
+                buf = io.BytesIO()
+                Image.fromarray(layer.mask, "L").save(buf, "PNG", compress_level=1)
+                z.writestr(mask_name, buf.getvalue())
+                info["mask"] = mask_name
+            meta["layers"].append(info)
         z.writestr("project.json", json.dumps(meta, indent=1))
 
 
@@ -110,7 +117,11 @@ def load_project(path):
         for info in meta["layers"]:
             with Image.open(io.BytesIO(z.read(info["file"]))) as im:
                 px = np.array(im.convert("RGBA"))
-            layers.append(Layer(info["name"], px, info["visible"], info["opacity"], info["blend"]))
+            layer = Layer(info["name"], px, info["visible"], info["opacity"], info["blend"])
+            if info.get("mask"):
+                with Image.open(io.BytesIO(z.read(info["mask"]))) as im:
+                    layer.mask = np.array(im.convert("L"))
+            layers.append(layer)
     doc = Document(meta["width"], meta["height"], layers)
     doc.active = min(meta.get("active", 0), len(layers) - 1)
     doc.adjust.update(adjustments.normalized(meta.get("adjust", {})))

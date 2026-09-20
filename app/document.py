@@ -37,13 +37,17 @@ class Layer:
         self.visible = visible
         self.opacity = opacity
         self.blend = blend
+        self.mask = None    # HxW uint8 layer mask: 255 shows the pixel, 0 hides it
         self.thumb = None
         self.thumb_src = None
+        self.mask_thumb = None
+        self.mask_thumb_src = None
         self.source = None  # pixels this layer was cut from (e.g. by object removal)
 
     def copy(self):
         c = Layer(self.name, self.pixels, self.visible, self.opacity, self.blend)
         c.thumb, c.thumb_src, c.source = self.thumb, self.thumb_src, self.source
+        c.mask, c.mask_thumb, c.mask_thumb_src = self.mask, self.mask_thumb, self.mask_thumb_src
         return c
 
 
@@ -136,7 +140,7 @@ class Document(QObject):
         H, W = self.height, self.width
         if not vis:
             return np.zeros((H, W, 4), np.uint8)
-        if len(vis) == 1 and vis[0].opacity >= 1:
+        if len(vis) == 1 and vis[0].opacity >= 1 and vis[0].mask is None:
             return vis[0].pixels
         out = np.empty((H, W, 4), np.uint8)
         step = max(1, 2_000_000 // W)  # process in row bands to limit memory use
@@ -147,6 +151,8 @@ class Document(QObject):
             for l in vis:
                 src = l.pixels[y0:y1].astype(np.float32) * (1 / 255)
                 cs, sa = src[..., :3], src[..., 3:4] * l.opacity
+                if l.mask is not None:      # the layer mask hides pixels without erasing them
+                    sa = sa * (l.mask[y0:y1, :, None].astype(np.float32) * (1 / 255))
                 if l.blend == "Normal":
                     mixed = cs
                 else:
@@ -278,6 +284,8 @@ class Document(QObject):
         self.push_undo(label)
         for l in self.layers:
             l.pixels = np.ascontiguousarray(fn(l.pixels))
+            if l.mask is not None:
+                l.mask = np.ascontiguousarray(fn(l.mask))
             l.source = None
         if self.selection is not None:
             self.selection = np.ascontiguousarray(fn(self.selection))
@@ -321,6 +329,56 @@ class Document(QObject):
         self.layers.insert(self.active + 1, Layer(self._unique_name("Layer"), new))
         self.active += 1
         self.changed.emit("structure")
+
+    # ------------------------------------------------------------------ layer masks
+    def add_mask(self, from_selection=False, label="Add layer mask"):
+        """Give the active layer a mask. Without a selection it starts fully visible."""
+        layer = self.active_layer()
+        if layer is None or layer.mask is not None:
+            return False
+        self.push_undo(label)
+        if from_selection and self.selection is not None:
+            layer.mask = np.ascontiguousarray(self.selection, np.uint8)
+        else:
+            layer.mask = np.full((self.height, self.width), 255, np.uint8)
+        self.changed.emit("structure")
+        return True
+
+    def set_mask(self, mask, label, coalesce=None):
+        layer = self.active_layer()
+        if layer is None:
+            return
+        self.push_undo(label, coalesce)
+        layer.mask = None if mask is None else np.ascontiguousarray(mask, np.uint8)
+        self.changed.emit("structure")
+
+    def delete_mask(self):
+        """Throw the mask away; the layer goes back to being fully visible."""
+        layer = self.active_layer()
+        if layer is None or layer.mask is None:
+            return False
+        self.set_mask(None, "Delete layer mask")
+        return True
+
+    def apply_mask(self):
+        """Bake the mask into the layer's own transparency, then drop it."""
+        layer = self.active_layer()
+        if layer is None or layer.mask is None:
+            return False
+        self.push_undo("Apply layer mask")
+        px = layer.pixels.copy()
+        px[..., 3] = (px[..., 3].astype(np.uint16) * layer.mask // 255).astype(np.uint8)
+        layer.pixels = px
+        layer.mask = None
+        self.changed.emit("pixels")
+        return True
+
+    def invert_mask(self):
+        layer = self.active_layer()
+        if layer is None or layer.mask is None:
+            return False
+        self.set_mask(255 - layer.mask, "Invert layer mask")
+        return True
 
     def set_adjustments(self, settings, label, coalesce=None):
         self.push_undo(label, coalesce)

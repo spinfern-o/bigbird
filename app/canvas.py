@@ -19,6 +19,7 @@ class ToolState:
         self.strength = 1.0
         self.color = QColor(0, 0, 0)
         self.crop_ratio = None  # width / height, or None for free
+        self.mask_paint = False  # Brush/Eraser edit the layer mask instead of the pixels
 
 
 class CropRectItem(QGraphicsRectItem):
@@ -64,6 +65,7 @@ class Canvas(QGraphicsView):
     outlineApply = Signal()
     outlineCancel = Signal()
     healFinished = Signal(object)          # uint8 mask painted with the Spot Healing Brush
+    maskPainted = Signal(object, bool)     # (uint8 stroke, hiding?) painted on a layer mask
     contextRequested = Signal(object)      # global position for a right-click menu
 
     def __init__(self, state, parent=None):
@@ -344,7 +346,10 @@ class Canvas(QGraphicsView):
             self.hint.emit("The selected layer is hidden. Turn it on in the Layers panel to paint on it.")
             return
         heal = self.state.tool == "heal"
-        if heal:  # the healing brush paints a mask of what to fix
+        mask_paint = self.state.mask_paint and self.state.tool in ("brush", "eraser")
+        if heal or mask_paint:
+            # These brushes paint a mask (what to heal, or what to hide/show) rather than
+            # pixels, so the stroke is drawn into an empty image and shown as an overlay.
             img = QImage(self.doc_w, self.doc_h, QImage.Format_ARGB32_Premultiplied)
             img.fill(Qt.transparent)
         else:
@@ -357,9 +362,17 @@ class Canvas(QGraphicsView):
         dab_alpha = 1 - (1 - min(self.state.strength, 0.999)) ** (1 / overlap)
         if self.state.strength >= 1 or heal:
             dab_alpha = 1.0
+        hiding = self.state.tool == "brush"
+        overlay = None
+        if heal:
+            overlay = (255, 60, 60, 90)
+        elif mask_paint:
+            overlay = (255, 60, 60, 110) if hiding else (110, 200, 255, 120)
         self._stroke = {"img": img, "live": live, "last": p, "left": spacing,
                         "spacing": spacing, "alpha": dab_alpha,
-                        "erase": self.state.tool == "eraser", "heal": heal}
+                        "erase": self.state.tool == "eraser" and not mask_paint,
+                        "heal": heal, "mask_paint": mask_paint, "hiding": hiding,
+                        "overlay": overlay}
         self._paint_dabs([p])
 
     def _continue_stroke(self, p):
@@ -384,8 +397,8 @@ class Canvas(QGraphicsView):
         col.setAlphaF(s["alpha"])
         for target, sx, sy in ((s["img"], 1.0, 1.0),
                                (s["live"], 1.0 / self._disp_sx, 1.0 / self._disp_sy)):
-            if s["heal"]:  # solid mask in the image, translucent red on screen
-                col = QColor(255, 0, 0) if target is s["img"] else QColor(255, 60, 60, 90)
+            if s["overlay"]:  # solid mask in the image, translucent colour on screen
+                col = QColor(255, 0, 0) if target is s["img"] else QColor(*s["overlay"])
             clear = QColor(col)
             clear.setAlpha(0)
             painter = QPainter(target)
@@ -411,6 +424,9 @@ class Canvas(QGraphicsView):
         s, self._stroke = self._stroke, None
         if s["heal"]:
             self.healFinished.emit(imageio.from_qimage(s["img"])[..., 3].copy())
+            return
+        if s["mask_paint"]:
+            self.maskPainted.emit(imageio.from_qimage(s["img"])[..., 3].copy(), s["hiding"])
             return
         label = "Eraser" if s["erase"] else "Brush stroke"
         self.strokeFinished.emit(imageio.from_qimage(s["img"]), label)

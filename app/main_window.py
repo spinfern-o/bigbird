@@ -219,6 +219,14 @@ class MainWindow(SelectionActions, QMainWindow):
         self.a_layer_dup = A("Duplicate Layer", lambda: self.doc.duplicate_layer(), "Ctrl+J")
         self.a_layer_del = A("Delete Layer", lambda: self.doc.delete_layer())
         self.a_layer_merge = A("Merge Down", lambda: self.doc.merge_down(), "Ctrl+Shift+E")
+        self.a_mask_add = A("Add Layer Mask", lambda: self._mask_action("add"), None,
+                            "Hide parts of this layer without erasing them")
+        self.a_mask_sel = A("Mask from Selection", lambda: self._mask_action("from_selection"),
+                            None, "Keep what you selected, hide the rest of this layer")
+        self.a_mask_invert = A("Invert Layer Mask", lambda: self._mask_action("invert"))
+        self.a_mask_del = A("Delete Layer Mask", lambda: self._mask_action("delete"))
+        self.a_mask_apply = A("Apply Layer Mask", lambda: self._mask_action("apply"), None,
+                              "Erase the hidden parts for good and remove the mask")
         self.a_tips = A("Quick Start Guide", self.show_tips, "F1")
         self.a_keys = A("Keyboard Shortcuts", self.show_shortcuts)
 
@@ -227,7 +235,9 @@ class MainWindow(SelectionActions, QMainWindow):
                             self.a_auto, self.a_compare, self.a_fit, self.a_100, self.a_zin,
                             self.a_zout, self.a_rot_l, self.a_rot_r, self.a_flip_h, self.a_flip_v,
                             self.a_resize, self.a_crop, self.a_flatten, self.a_layer_new,
-                            self.a_layer_dup, self.a_layer_del, self.a_layer_merge]
+                            self.a_layer_dup, self.a_layer_del, self.a_layer_merge,
+                            self.a_mask_add, self.a_mask_sel, self.a_mask_invert,
+                            self.a_mask_del, self.a_mask_apply]
 
         self.tool_group = QActionGroup(self)
         self.tool_group.setExclusionPolicy(QActionGroup.ExclusionPolicy.ExclusiveOptional)
@@ -277,6 +287,11 @@ class MainWindow(SelectionActions, QMainWindow):
         m = mb.addMenu("&Layer")
         for a in (self.a_layer_new, self.a_layer_dup, self.a_layer_merge, self.a_layer_del):
             m.addAction(a)
+        m.addSeparator()
+        mask_menu = m.addMenu("Layer Mask")
+        for a in (self.a_mask_add, self.a_mask_sel, None, self.a_mask_invert, self.a_mask_del,
+                  self.a_mask_apply):
+            mask_menu.addSeparator() if a is None else mask_menu.addAction(a)
         m = mb.addMenu("Fil&ters")
         note = m.addAction("Filters change the selected layer")
         note.setEnabled(False)
@@ -460,6 +475,9 @@ class MainWindow(SelectionActions, QMainWindow):
         ap.mixerResetRequested.connect(self.reset_color_mixer)
         ap.curveResetRequested.connect(self.reset_tone_curve)
         ap.hint.connect(self.hint_lbl.setText)
+        self.canvas.maskPainted.connect(self._mask_painted)
+        self.layers_panel.maskAction.connect(self._mask_action)
+        self.layers_panel.maskPaintToggled.connect(self._mask_paint_toggled)
         lp = self.layers_panel.actions
         lp["new"].clicked.connect(self.a_layer_new.trigger)
         lp["dup"].clicked.connect(self.a_layer_dup.trigger)
@@ -506,6 +524,7 @@ class MainWindow(SelectionActions, QMainWindow):
     def _doc_changed(self, kind):
         if kind == "selection":
             self._selection_changed()
+            self.layers_panel._sync_props()   # "Mask from Selection" needs a selection
             return
         if kind == "all":
             self._selection_changed(from_tool=False)
@@ -549,6 +568,61 @@ class MainWindow(SelectionActions, QMainWindow):
         layer = self.doc.active_layer()
         self.hint_lbl.setText(f"Selected layer: {layer.name}. Brush, eraser, move and filters "
                               "work on this layer.")
+
+    # ================================================================== layer masks
+    def _mask_action(self, cmd):
+        """Add / fill from the selection / invert / delete / apply the layer mask."""
+        d = self.doc
+        if d is None or d.active_layer() is None:
+            return
+        if cmd == "add":
+            if d.add_mask():
+                self.hint_lbl.setText(
+                    "Added a mask. Tick 'Paint on the mask' in the Layers panel, then brush "
+                    "over anything you want to hide — the Eraser brings it back.")
+        elif cmd == "from_selection":
+            if d.selection is None:
+                self.hint_lbl.setText("Select something first (Lasso, Wand or Marquee), then "
+                                      "use Mask from Selection.")
+                return
+            layer = d.active_layer()
+            if layer.mask is None:
+                d.add_mask(from_selection=True, label="Mask from selection")
+            else:
+                d.set_mask(d.selection, "Mask from selection")
+            self.hint_lbl.setText("Only the selected part of this layer is showing now. "
+                                  "Layer ▸ Layer Mask ▸ Invert swaps it around.")
+        elif cmd == "invert":
+            d.invert_mask()
+        elif cmd == "delete":
+            if d.delete_mask():
+                self.hint_lbl.setText("Mask deleted — the whole layer is back.")
+        elif cmd == "apply":
+            if d.apply_mask():
+                self.hint_lbl.setText("Mask applied: the hidden parts are erased now. "
+                                      "Ctrl+Z to undo.")
+        self.layers_panel.rebuild()
+
+    def _mask_paint_toggled(self, on):
+        self.state.mask_paint = on
+        if on:
+            self.select_tool("brush")
+            self.hint_lbl.setText("Painting on the mask: the Brush hides, the Eraser brings "
+                                  "things back. Untick 'Paint on the mask' to go back to "
+                                  "painting the photo.")
+        elif self.doc:
+            self.hint_lbl.setText("Back to painting on the photo itself.")
+
+    def _mask_painted(self, stroke, hiding):
+        """A brush/eraser stroke landed on the active layer's mask."""
+        layer = self.doc.active_layer() if self.doc else None
+        if layer is None or layer.mask is None or not (stroke > 0).any():
+            return
+        m = layer.mask.astype(np.uint16)
+        st = stroke.astype(np.uint16)
+        new = m * (255 - st) // 255 if hiding else m + (255 - m) * st // 255
+        self.doc.set_mask(new.astype(np.uint8),
+                          "Hide with mask" if hiding else "Reveal with mask")
 
     # ================================================================== tools
     def select_tool(self, key):
