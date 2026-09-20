@@ -1,11 +1,31 @@
-# PhotoForge
+# Phrame
 
-A beginner-friendly Windows photo editor combining Lightroom-style photo
-adjustments with Photoshop-style layers and tools.
+> **Professional control. Instant AI editing. One creative workspace.**
+
+Phrame ends the choice between clunky professional software and limited AI tools.
+It combines Lightroom-style nondestructive adjustments, Photoshop-style layers
+and selections, and local or NVIDIA-powered AI in one desktop editor.
+
+Unlike prompt-only editors, Phrame keeps creators in control. Users can make
+precise manual changes, use AI for difficult or repetitive work, refine the
+result directly on the canvas, and continue editing without flattening the
+project.
+
+## Why Phrame is different
+
+- **A complete editor, not an AI wrapper:** Layers, selections, retouching,
+  filters, undo history, and professional adjustments work alongside AI.
+- **Local when possible, cloud when useful:** Lightweight models run privately
+  on the device, while generative operations can use NVIDIA-backed infrastructure.
+- **AI results stay editable:** Selections, outlines, masks, and layers let users
+  correct or refine what AI produces.
+- **Built for accessibility:** Familiar creative-software patterns,
+  plain-language guidance, and one-click tools reduce the learning curve without
+  removing advanced control.
 
 ## Run it
 
-Double-click **`PhotoForge.bat`**. The first launch creates a virtual environment and
+Launch Phrame by double-clicking **`PhotoForge.bat`**. The first launch creates a virtual environment and
 installs dependencies automatically. You can also drag a photo onto the `.bat` file.
 
 Or from a terminal:
@@ -22,14 +42,14 @@ can be built at the same time. See **[ROADMAP.txt](ROADMAP.txt)**.
 
 ## Account sign-in
 
-PhotoForge now shows the **account screen first** every time the desktop app
+Phrame now shows the **account screen first** every time the desktop app
 starts. Login happens in the user's default web browser (Safari, Chrome, Edge,
 etc.), so credentials never live in the desktop app:
 
 1. Launch PhotoForge and click **Log in**.
 2. The app opens `https://www.phrame.tech/desktop-login` in the default browser.
 3. Sign in there. If you need an account, use **Create one** on that page.
-4. After creating an account, close the browser tab, return to PhotoForge, and
+4. After creating an account, close the browser tab, return to Phrame, and
    click **Log in** again.
 5. A successful login returns the session to the app through a local
    `127.0.0.1` callback and opens the editor.
@@ -45,7 +65,7 @@ The Supabase environment variables (`NEXT_PUBLIC_SUPABASE_URL`,
 `NEXT_PUBLIC_SUPABASE_ANON_KEY`) are provided by the Supabase integration.
 This project intentionally does not use signup email verification. In Supabase
 Auth settings, **Confirm email must be disabled**; otherwise Supabase itself
-will still send confirmation mail even though the PhotoForge signup page no
+will still send confirmation mail even though the Phrame signup page no
 longer asks the user to verify.
 
 The same Vercel deployment also hosts the **cloud AI proxy** at `/api/edit`
@@ -127,7 +147,7 @@ only an accelerator for the same approved local models. Generative editing/fill 
 the signed-in `phrame.tech/api/edit` → NVIDIA NIM path described above.
 Setup and troubleshooting: [server/README.md](server/README.md).
 
-**App persistence**: PhotoForge remembers the last local folder, up to 10 recent files
+**App persistence**: Phrame remembers the last local folder, up to 10 recent files
 (File → Open Recent), and the window size/position with Qt QSettings.
 
 **Beginner help**: welcome screen, plain-English tooltips on every control,
