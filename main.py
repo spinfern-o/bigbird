@@ -2,11 +2,10 @@
 import ctypes
 import sys
 
-from PySide6.QtWidgets import QApplication, QDialog
+from PySide6.QtWidgets import QApplication
 
 from app import theme
 from app.auth import AuthManager
-from app.login_window import LoginWindow
 from app.main_window import MainWindow
 
 
@@ -19,13 +18,11 @@ def main():
     app.setApplicationName("PhotoForge")
     theme.apply(app)
 
-    # The account screen is always the first UI shown, including in packaged
-    # builds. Login itself happens in the user's default browser.
+    # The editor opens straight away: open a photo and start editing without an
+    # account. Signing in (the Log in button, top right) is only needed for the
+    # cloud features — saving projects to your account and opening them on
+    # another computer. A saved session is picked up automatically.
     auth = AuthManager()
-    login = LoginWindow(auth)
-    if login.exec() != QDialog.Accepted:
-        return
-
     win = MainWindow(auth=auth)
     win.show()
     if len(sys.argv) > 1:
