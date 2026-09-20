@@ -20,8 +20,9 @@ from .panels import AdjustPanel, ColorButton, LayersPanel, NoWheelSlider
 from .renderer import Renderer
 from .selection import apply_masked
 from .selection_actions import SELECT_TOOL_INFO, SelectionActions
-from .ai import cloud as ai_cloud, models as ai_models, tasks as ai_tasks
+from .ai import base as ai_base, cloud as ai_cloud, models as ai_models, tasks as ai_tasks
 from .ai.connection import CloudConnection
+from .ai.router import ASK_CLARIFY, GPU_GENERATE, LOCAL_EDIT, RouterContext, SmartEditRouter
 from .ai.settings_dialog import AISettingsDialog
 from .ai.outline import OutlineEditor, solidify, trace_mask
 from .ai.object_select import ObjectSelector
@@ -487,6 +488,7 @@ class MainWindow(SelectionActions, QMainWindow):
         self.layers_panel.set_document(doc)
         self.adjust_panel.sync(doc.adjust if doc else adjustments.DEFAULTS)
         self.adjust_panel.setEnabled(doc is not None)
+        self.ai_panel.set_fill_available(self._removed_area_mask() is not None if doc else False)
         for a in self.doc_actions + list(self.tool_actions.values()):
             a.setEnabled(doc is not None)
         self._ratio_changed(self.ratio_combo.currentIndex())
@@ -515,6 +517,7 @@ class MainWindow(SelectionActions, QMainWindow):
         if kind == "all":
             self.adjust_panel.sync(self.doc.adjust)
             self._ratio_changed(self.ratio_combo.currentIndex())
+        self.ai_panel.set_fill_available(self._removed_area_mask() is not None)
         self._update_labels()
 
     def _history_changed(self):
@@ -1044,6 +1047,7 @@ class MainWindow(SelectionActions, QMainWindow):
                                 "Adjust what was removed with draggable dots")
         self.a_ai_settings = A("AI Settings…", self.ai_settings, None,
                                "Optionally accelerate local AI on the Brev NVIDIA GPU")
+        self.smart_router = SmartEditRouter()
         self.cloud_conn = CloudConnection(self)
         self.cloud_conn.changed.connect(self._cloud_changed)
         self.cloud_lbl = QPushButton()
@@ -1060,6 +1064,8 @@ class MainWindow(SelectionActions, QMainWindow):
         self.ai_menu.addSeparator()
         self.ai_menu.addAction(self.a_ai_settings)
         p = self.ai_panel
+        p.smartEdit.connect(self.ai_smart_edit)
+        p.fillRemoved.connect(self.ai_fill_removed)
         p.removeBackground.connect(self.ai_remove_background)
         p.refineOutline.connect(self.ai_refine_outline)
         p.removeObject.connect(lambda: self.select_tool("ai_remove"))
@@ -1321,6 +1327,139 @@ class MainWindow(SelectionActions, QMainWindow):
         if self._outline_mode == "ai_select":
             self.canvas.outline.smaller_part()
             self.canvas.setFocus()
+
+    def _removed_area_mask(self):
+        """Return the latest A5 transparent-removal mask, or None."""
+        if not self.doc:
+            return None
+        for layer in reversed(self.doc.layers):
+            if layer.source is None:
+                continue
+            src_a = layer.source[..., 3].astype(np.float32)
+            cur_a = layer.pixels[..., 3].astype(np.float32)
+            removed = np.where(
+                src_a > 0,
+                255 - cur_a * 255 / np.maximum(src_a, 1),
+                0,
+            )
+            mask = np.clip(removed + 0.5, 0, 255).astype(np.uint8)
+            if (mask > 0).any():
+                return mask
+        return None
+
+    def _smart_context(self, mask=None, removed=None):
+        selection = mask if mask is not None else self.doc.selection
+        selection_fraction = (
+            float((selection > 0).mean()) if selection is not None else 0.0
+        )
+        removed = removed if removed is not None else self._removed_area_mask()
+        transparent_fraction = (
+            float((removed > 0).mean()) if removed is not None else 0.0
+        )
+        return RouterContext(
+            has_selection=selection is not None,
+            selection_fraction=selection_fraction,
+            transparent_fraction=transparent_fraction,
+        )
+
+    def _apply_smart_local(self, decision):
+        ranges = {key: (lo, hi) for _sec, key, _label, lo, hi, _tip in adjustments.SLIDERS}
+        settings = dict(self.doc.adjust)
+        changed = False
+        for key, delta in decision.local_adjustments.items():
+            if key not in ranges:
+                continue
+            lo, hi = ranges[key]
+            value = int(np.clip(settings.get(key, 0) + delta, lo, hi))
+            if value != settings.get(key, 0):
+                settings[key] = value
+                changed = True
+        if not changed:
+            QMessageBox.information(
+                self,
+                "Smart Edit",
+                "I understood this as a local edit, but there is nothing to change yet.",
+            )
+            return
+        self.doc.set_adjustments(settings, f"Smart Edit: {decision.operation}")
+        self.tabs.setCurrentWidget(self.adjust_panel)
+        self.ai_panel.set_route_status(f"{decision.badge} — {decision.reason}")
+        self.hint_lbl.setText(
+            f"SmartRoute kept this edit local: {decision.reason} Ctrl+Z to undo."
+        )
+
+    def ai_smart_edit(self, prompt):
+        if not self.doc:
+            return
+        prompt = (prompt or "").strip()
+        decision = self.smart_router.route(prompt, self._smart_context())
+        self.ai_panel.set_route_status(f"{decision.badge} — {decision.reason}")
+
+        if decision.route == ASK_CLARIFY:
+            QMessageBox.information(self, "Smart Edit", decision.reason)
+            return
+        if decision.route == LOCAL_EDIT:
+            self._apply_smart_local(decision)
+            return
+
+        self._run_smart_gpu(prompt, self.doc.selection, decision)
+
+    def ai_fill_removed(self):
+        if not self.doc:
+            return
+        mask = self._removed_area_mask()
+        if mask is None:
+            QMessageBox.information(
+                self,
+                "Fill Removed Area",
+                "Remove an object first, then PhotoForge can reconstruct the gap.",
+            )
+            return
+        prompt = "Fill the removed area naturally to match the surrounding photo."
+        decision = self.smart_router.route(
+            prompt,
+            self._smart_context(mask=mask, removed=mask),
+        )
+        self.ai_panel.set_route_status(f"{decision.badge} — {decision.reason}")
+        self._run_smart_gpu(prompt, mask, decision, title="Fill Removed Area")
+
+    def _run_smart_gpu(self, prompt, mask, decision, title="Smart Edit"):
+        if not self.auth.is_logged_in:
+            if QMessageBox.question(
+                self,
+                title,
+                "GPU generative edits use your phrame.tech account.\n\nLog in now?",
+            ) == QMessageBox.Yes:
+                self.auth.login()
+            return
+
+        notice = ai_base.cloud_notice(ai_base.DESCRIBE_EDIT)
+        if notice and QMessageBox.question(self, title, notice) != QMessageBox.Yes:
+            return
+
+        source = np.ascontiguousarray(self.doc.composite())
+        backend = ai_base.CloudBackend(self.auth)
+
+        def done(result):
+            px = np.ascontiguousarray(result)
+            if mask is not None:
+                overlay = px.copy()
+                overlay[..., 3] = np.minimum(overlay[..., 3], mask)
+                px = overlay
+            name = "Generative Fill" if title == "Fill Removed Area" else "Smart Edit"
+            self.doc.add_result_layer(px, name, title)
+            self.ai_panel.set_route_status(f"{decision.badge} — Done on a new layer.")
+            self.hint_lbl.setText(f"{name} added on a new layer. Ctrl+Z to undo.")
+
+        run_ai(
+            self,
+            [],
+            title,
+            "Generating your edit…",
+            lambda: backend.run(ai_base.DESCRIBE_EDIT, source, mask=mask, prompt=prompt),
+            done,
+            place_override="NVIDIA cloud GPU",
+        )
 
     def ai_settings(self):
         AISettingsDialog(self, self.cloud_conn).exec()
