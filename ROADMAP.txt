@@ -22,44 +22,31 @@ TRACK A - SELECTIONS & AI
 --------------------------------------------------------------------------------
 Owns:  app/selection.py (new), app/ai/ (new package), app/ai_dialogs.py (new)
 
-A1. Selection system  [DONE: Marquee, Lasso (freehand/magnetic/polygonal), Magic Wand,
-    Select menu + Select tab, right-click menu]
-    - Document gets `selection`: an HxW uint8 mask (None = everything selected).
-    - Tools: Rectangle select, Ellipse select, Lasso.
-    - "Marching ants" outline on the canvas.
-    - Select menu: Select All (Ctrl+A), Deselect (Ctrl+D), Invert (Ctrl+Shift+I),
-      Feather...
-    - Brush, eraser and filters only affect the selected area when a selection exists.
-    - Delete key clears the selected pixels; Ctrl+J copies the selection to a new layer.
+~~A1. Selection system~~  [DONE]
+    ~~Document selection mask, Marquee, Ellipse, Lasso, Magic Wand, marching ants,
+    Select menu/tab/context menu, selection-aware Brush/Eraser/Filters, Delete,
+    and Ctrl+J Layer via Copy are complete.~~
 
-A2. AI framework  [PARTLY DONE: local backend, model downloader, background runner]
-    - app/ai/base.py: one interface, `run(task, image, mask, prompt) -> image`,
-      with two backends:
-        * LocalBackend  - ONNX Runtime + DirectML (uses any GPU, falls back to CPU)
-        * CloudBackend  - NVIDIA NIM API (build.nvidia.com); keep it easy to add
-                          Replicate/fal later
-    - AI Settings dialog: NVIDIA API key (stored locally, never in the repo),
-      "Prefer local / prefer cloud" choice.
-    - Model downloader: downloads each model the first time a feature is used,
-      with a progress bar and a cancel button. Store models in %LOCALAPPDATA%\PhotoForge\models.
-    - All AI work runs on a background thread with a progress indicator; the UI
-      must never freeze.
-    - Show a clear notice when a feature sends the photo to the cloud.
+A2. AI framework  [MOSTLY DONE]
+    - ~~app/ai/base.py unified LocalBackend / CloudBackend interface.~~ [DONE]
+    - ~~Local ONNX Runtime path with GPU acceleration + CPU fallback.~~ [DONE]
+    - ~~Cloud NVIDIA path through authenticated phrame.tech/api/edit proxy.~~ [DONE]
+      The NVIDIA key stays server-side in Vercel/hosting environment variables; it is
+      intentionally never stored in the desktop app.
+    - ~~AI Settings for local vs optional Brev acceleration.~~ [DONE]
+    - ~~Model downloader with progress + cancel in %LOCALAPPDATA%\PhotoForge\models.~~ [DONE]
+    - ~~Background-thread AI runner with progress UI.~~ [DONE]
+    - cloud_notice() exists; A6 still needs to show the confirmation in its user-facing UI.
 
-A3. DONE          Remove Background (local: BiRefNet-lite; see "Approved AI models" below)  [DONE]
-    - Plus "Refine Outline": editable dots and lines, More/Fewer Points; untouched
-      edges keep the AI's fine detail.
-    - One click: the result goes on a new layer (original stays underneath, hidden).
+~~A3. Remove Background (local: BiRefNet-lite)~~  [DONE]
+    ~~Refine Outline, editable points/lines, and new-layer output are complete.~~
 
-A4. DONE          Click-to-Select (local: SAM 2.1 Tiny)  [DONE, used by "Select Object(s) to Remove"]
-    - Click an object to select it; Shift+click adds, Alt+click subtracts.
-    - Produces a normal selection (A1), so every selection feature works with it.
+~~A4. Click-to-Select (local: SAM 2.1 Tiny)~~  [DONE]
+    ~~Object selection integrates with the normal A1 selection system.~~
 
-A5. DONE          Remove Object  [DONE, redesigned]
-    - Click objects to select them (SAM 2.1). They are made transparent (not filled) on a
-      new layer, then "Refine Removal" opens with editable dots.
-    - Filling the gap moves to the cloud (A6). The local LaMa / MI-GAN fill was removed.
-    - Brush over or select something, click "Remove"; the result goes on a new layer.
+~~A5. Remove Object~~  [DONE, redesigned]
+    ~~SAM selection → transparent removal layer → Refine Removal is complete.~~
+    Filling the transparent gap intentionally remains part of A6 cloud generative fill.
 
 A6. Describe Your Edit / Generative Fill (cloud: NVIDIA - Qwen-Image-Edit, FLUX.2-klein 4B)
     - Includes "Fill removed area": fill the transparent gap left by A5.
@@ -71,10 +58,8 @@ A6. Describe Your Edit / Generative Fill (cloud: NVIDIA - Qwen-Image-Edit, FLUX.
 
 A7. AI Upscale 2x / 4x (Real-ESRGAN: realesr-general-x4v3 fast, x4plus best quality)
 
-A8. Open-source licenses screen  [DONE: Help > Open-source Licenses]
-    - Help > About > Open-source licenses: list every model and library with its
-      license text and copyright notice. MIT / Apache / BSD require this when the
-      app is distributed.
+~~A8. Open-source licenses screen~~  [DONE]
+    ~~Help > Open-source Licenses lists the included models/libraries and license info.~~
 
 APPROVED AI MODELS (all free to download and allowed in commercial products)
     Licenses verified on each model's official page, September 2026.
@@ -113,10 +98,8 @@ TRACK B - PRO EDITING & LIGHTROOM FEATURES
 Owns:  app/adjustments.py, app/panels.py (AdjustPanel part), app/curves.py (new),
        app/library.py (new), app/retouch.py (new), packaging files
 
-B1. Color Mixer (HSL)
-    - Hue / Saturation / Luminance for 8 colors (red, orange, yellow, green,
-      aqua, blue, purple, magenta). New "Color Mixer" section in the Adjust tab.
-    - Add a few presets that use it (e.g. "Teal & Orange").
+~~B1. Color Mixer (HSL)~~  [DONE]
+    ~~8-color Hue/Saturation/Luminance mixer, UI, reset behavior, and presets are complete.~~
 
 B2. Tone Curve
     - Draggable curve widget (RGB + separate R/G/B), plus simple
@@ -128,10 +111,10 @@ B3. Layer Masks
     - Mask thumbnail next to the layer thumbnail.
     - (Integration with A1: "Mask from Selection" - whoever lands second adds it.)
 
-B4. Retouch tools  [PARTLY DONE: Spot Healing Brush, Remove Blemishes, Smooth Skin,
-    Reduce Redness, Heal Selection]
+B4. Retouch tools  [PARTLY DONE]
     - Clone Stamp (Alt+click to set the source).
-    - Spot Healing brush (blends texture and color from nearby).
+    - ~~Spot Healing Brush.~~ [DONE]
+    - ~~Remove Blemishes, Smooth Skin, Reduce Redness, Heal Selection.~~ [DONE]
     - Red-eye removal.
 
 B5. Local adjustments (Lightroom-style)
@@ -143,8 +126,8 @@ B6. Library / multiple photos
     - Copy / paste adjustment settings between photos.
     - Batch export (same settings, many photos).
 
-B7. App polish & shipping  [PARTLY DONE: window geometry, recent files, last folder]
-    - Remember window layout, recent files, last folder (QSettings).  [DONE]
+B7. App polish & shipping  [PARTLY DONE]
+    - ~~Remember window layout, recent files, last folder (QSettings).~~ [DONE]
     - History panel (click any step to jump back).
     - App icon, proper .exe and installer (PyInstaller + Inno Setup).
     - Crash-safe autosave of the open project.
@@ -167,9 +150,24 @@ These files are used by both tracks. Keep edits to them small and additive
   app/icons.py        Append new icon functions only.
   requirements.txt    Append only. (A adds onnxruntime-directml, requests.)
 
-Merge order that avoids the most pain:
-  1. A1 (selection) and B1 (HSL) can start immediately, since they don't overlap.
-  2. B3 (masks) should rebase after A1 lands, since both touch compositing/canvas.
-  3. Everything else is independent.
+CURRENT NEXT PRIORITIES
+-----------------------
+Track A:
+  1. A6 Describe Your Edit / Generative Fill.
+     The authenticated Vercel/NVIDIA backend groundwork already exists; build the actual
+     prompt/selection UI, cloud notice, Fill Removed Area flow, new-layer result, and
+     2-3 variations.
+  2. A7 AI Upscale 2x / 4x with Real-ESRGAN.
 
-Suggested start:  Track A -> A1, then A2.   Track B -> B1, then B2.
+Track B:
+  1. B2 Tone Curve.
+  2. B3 Layer Masks.
+  3. Finish B4 with Clone Stamp + Red-eye removal.
+  4. B5 Local adjustments.
+  5. B6 Library / multiple photos.
+  6. Finish B7 with History, packaging/installer, and crash-safe autosave.
+
+Recommended immediate parallel work:
+  Track A -> A6
+  Track B -> B2
+
