@@ -137,6 +137,15 @@ d2 = cv2.imdecode(np.frombuffer(base64.b64decode(captured["body"]["image"]), np.
                   cv2.IMREAD_UNCHANGED)
 check("small photo not upscaled", d2.shape[:2] == (80, 60), f"{d2.shape[:2]}")
 
+mask = np.zeros((80, 60), np.uint8)
+mask[20:50, 10:40] = 255
+base.CloudBackend(FakeAuth("tok")).run(base.DESCRIBE_EDIT, small, mask=mask, prompt="edit selection")
+mask_wire = cv2.imdecode(
+    np.frombuffer(base64.b64decode(captured["body"]["mask"]), np.uint8),
+    cv2.IMREAD_UNCHANGED,
+)
+check("2-D selection mask encodes successfully", mask_wire.shape[:2] == mask.shape)
+
 
 # ------------------------------------------------------------- error surfacing
 def raise_http(code, payload):
