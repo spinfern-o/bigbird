@@ -188,6 +188,58 @@ def smooth_skin(rgb, sel, amount, texture):
     return out
 
 
+def remove_red_eye(rgb, sel):
+    """Fix the red glow flash puts in people's pupils.
+
+    Looks for small, roughly round patches where red overwhelms green and blue, then
+    drains the red out of them and darkens them back to a normal pupil. Returns
+    (new_rgb, number_of_eyes_fixed).
+    """
+    box = selection.bbox(sel, 4)
+    if box is None:
+        return rgb, 0
+    x0, y0, x1, y1 = box
+    crop = rgb[y0:y1, x0:x1, :3].astype(np.int16)
+    r, g, b = crop[..., 0], crop[..., 1], crop[..., 2]
+    other = np.maximum(g, b)
+    # "Redness": how far red runs ahead of the other channels, 0..1.
+    redness = np.clip((r - other) / np.maximum(r, 1), 0, 1)
+    cand = ((redness > 0.35) & (r > 70) & (sel[y0:y1, x0:x1] > 127)).astype(np.uint8)
+    cand = cv2.morphologyEx(cand, cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8))
+    n, labels, stats, _ = cv2.connectedComponentsWithStats(cand, 8)
+    if n <= 1:
+        return rgb, 0
+    # Size limits come from the whole photo, not the selection, so circling one eye
+    # tightly works just as well as searching the entire picture.
+    H, W = rgb.shape[:2]
+    area_cap = 0.02 * H * W
+    size_cap = max(14, 0.12 * min(H, W))
+    keep = np.zeros(n, bool)
+    for i in range(1, n):
+        _bx, _by, bw, bh, area = stats[i]
+        if area < 6 or area > area_cap or max(bw, bh) > size_cap:
+            continue
+        if not 0.35 <= bw / max(1, bh) <= 2.8:      # pupils are roughly round
+            continue
+        if area < 0.35 * bw * bh:                   # ...and fairly solid
+            continue
+        keep[i] = True
+    count = int(keep.sum())
+    if not count:
+        return rgb, 0
+    m = cv2.GaussianBlur((keep[labels].astype(np.uint8) * 255), (0, 0), 1.2)
+    m = (m.astype(np.float32) / 255.0)[..., None]
+    fixed = crop.astype(np.float32)
+    grey = np.minimum(g, b).astype(np.float32)      # a pupil is dark and colourless
+    fixed[..., 0] = grey
+    fixed[..., 1] = np.minimum(g, grey * 1.1)
+    fixed[..., 2] = np.minimum(b, grey * 1.1)
+    fixed *= 0.85
+    out = rgb.copy()
+    out[y0:y1, x0:x1, :3] = np.clip(crop * (1 - m) + fixed * m + 0.5, 0, 255).astype(np.uint8)
+    return out, count
+
+
 def reduce_redness(rgb, sel, amount):
     """Calm red, blotchy areas (acne redness, irritation) toward the surrounding skin tone."""
     box = selection.bbox(sel, 2)

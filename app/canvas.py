@@ -20,6 +20,9 @@ class ToolState:
         self.color = QColor(0, 0, 0)
         self.crop_ratio = None  # width / height, or None for free
         self.mask_paint = False  # Brush/Eraser edit the layer mask instead of the pixels
+        self.clone_src = None     # Clone Stamp source point, in document coordinates
+        self.clone_offset = None  # source -> brush offset, kept between aligned strokes
+        self.clone_aligned = True
 
 
 class CropRectItem(QGraphicsRectItem):
@@ -113,6 +116,15 @@ class Canvas(QGraphicsView):
             ring.setZValue(20)
             ring.hide()
             self._scene.addItem(ring)
+
+        self.clone_marker = QGraphicsPathItem()
+        pen = QPen(QColor(255, 220, 60))
+        pen.setCosmetic(True)
+        pen.setWidthF(1.6)
+        self.clone_marker.setPen(pen)
+        self.clone_marker.setZValue(21)
+        self.clone_marker.hide()
+        self._scene.addItem(self.clone_marker)
 
         self._checker = _checker_brush()
         self.setRenderHints(QPainter.Antialiasing | QPainter.SmoothPixmapTransform)
@@ -214,6 +226,7 @@ class Canvas(QGraphicsView):
         self.update_cursor()
         self.ring_dark.hide()
         self.ring_light.hide()
+        self.show_clone_marker()
 
     def update_cursor(self):
         t = self.state.tool
@@ -229,7 +242,7 @@ class Canvas(QGraphicsView):
         return 0 <= p.x() < self.doc_w and 0 <= p.y() < self.doc_h
 
     def _update_ring(self, p):
-        if self.state.tool in ("brush", "eraser", "heal") and self.doc_w and not self._space:
+        if self.state.tool in ("brush", "eraser", "heal", "clone") and self.doc_w                 and not self._space:
             r = self.state.brush_size / 2
             for ring in (self.ring_dark, self.ring_light):
                 ring.setRect(QRectF(p.x() - r, p.y() - r, 2 * r, 2 * r))
@@ -257,7 +270,9 @@ class Canvas(QGraphicsView):
             return
         if e.button() != Qt.LeftButton:
             return
-        if tool in ("brush", "eraser", "heal"):
+        if tool == "clone" and (e.modifiers() & Qt.AltModifier):
+            self.set_clone_source(p)
+        elif tool in ("brush", "eraser", "heal", "clone"):
             self._begin_stroke(p)
         elif tool == "crop":
             self._crop_press(p)
@@ -339,13 +354,45 @@ class Canvas(QGraphicsView):
         else:
             super().keyReleaseEvent(e)
 
+    # ------------------------------------------------------------------ clone stamp
+    def set_clone_source(self, p):
+        """Alt+click: remember the spot the Clone Stamp copies from."""
+        self.state.clone_src = QPointF(p)
+        self.state.clone_offset = None
+        self.show_clone_marker()
+        self.hint.emit("Clone source set. Now brush over what you want to cover — it is "
+                       "painted with a copy of that spot. Alt+click somewhere else to change it.")
+
+    def show_clone_marker(self):
+        src = self.state.clone_src
+        if src is None or self.state.tool != "clone":
+            self.clone_marker.hide()
+            return
+        path = QPainterPath()
+        r = max(6.0, self.state.brush_size / 2)
+        path.addEllipse(src, r, r)
+        path.moveTo(src.x() - r - 6, src.y())
+        path.lineTo(src.x() + r + 6, src.y())
+        path.moveTo(src.x(), src.y() - r - 6)
+        path.lineTo(src.x(), src.y() + r + 6)
+        self.clone_marker.setPath(path)
+        self.clone_marker.show()
+
     # ------------------------------------------------------------------ brush / eraser
     def _begin_stroke(self, p):
         layer = self.doc.active_layer()
         if not layer.visible:
             self.hint.emit("The selected layer is hidden. Turn it on in the Layers panel to paint on it.")
             return
+        if self.state.tool == "clone":
+            if self.state.clone_src is None:
+                self.hint.emit("Clone Stamp: hold Alt and click the clean spot you want to copy "
+                               "from first, then brush over the part you want to cover.")
+                return
+            if self.state.clone_offset is None or not self.state.clone_aligned:
+                self.state.clone_offset = p - self.state.clone_src
         heal = self.state.tool == "heal"
+        clone = self.state.tool == "clone"
         mask_paint = self.state.mask_paint and self.state.tool in ("brush", "eraser")
         if heal or mask_paint:
             # These brushes paint a mask (what to heal, or what to hide/show) rather than
@@ -372,7 +419,11 @@ class Canvas(QGraphicsView):
                         "spacing": spacing, "alpha": dab_alpha,
                         "erase": self.state.tool == "eraser" and not mask_paint,
                         "heal": heal, "mask_paint": mask_paint, "hiding": hiding,
-                        "overlay": overlay}
+                        "overlay": overlay, "clone": clone,
+                        # The Clone Stamp copies from what you can see, frozen at the moment
+                        # the stroke starts so it can never copy its own output.
+                        "src_img": imageio.to_qimage(self.doc.composite()) if clone else None,
+                        "offset": QPointF(self.state.clone_offset) if clone else None}
         self._paint_dabs([p])
 
     def _continue_stroke(self, p):
@@ -407,6 +458,10 @@ class Canvas(QGraphicsView):
             painter.scale(sx, sy)
             if s["erase"]:
                 painter.setCompositionMode(QPainter.CompositionMode_DestinationOut)
+            if s["clone"]:
+                self._clone_dabs(painter, s, pts, r, hard)
+                painter.end()
+                continue
             for pt in pts:
                 if hard >= 0.99:
                     painter.setBrush(col)
@@ -420,6 +475,26 @@ class Canvas(QGraphicsView):
             painter.end()
         self.item.setPixmap(s["live"])
 
+    def _clone_dabs(self, painter, s, pts, r, hard):
+        """Stamp copies of the source area, faded out towards the edge of the brush."""
+        size = max(2, int(math.ceil(2 * r)))
+        off = s["offset"]
+        for pt in pts:
+            tile = QImage(size, size, QImage.Format_ARGB32_Premultiplied)
+            tile.fill(Qt.transparent)
+            tp = QPainter(tile)
+            tp.drawImage(QRectF(0, 0, size, size), s["src_img"],
+                         QRectF(pt.x() - off.x() - r, pt.y() - off.y() - r, size, size))
+            grad = QRadialGradient(QPointF(r, r), r)
+            solid = QColor(0, 0, 0, int(round(255 * s["alpha"])))
+            grad.setColorAt(0, solid)
+            grad.setColorAt(max(0.0, min(0.99, hard)), solid)
+            grad.setColorAt(1, QColor(0, 0, 0, 0))
+            tp.setCompositionMode(QPainter.CompositionMode_DestinationIn)
+            tp.fillRect(tile.rect(), QBrush(grad))
+            tp.end()
+            painter.drawImage(QPointF(pt.x() - r, pt.y() - r), tile)
+
     def _end_stroke(self):
         s, self._stroke = self._stroke, None
         if s["heal"]:
@@ -428,7 +503,7 @@ class Canvas(QGraphicsView):
         if s["mask_paint"]:
             self.maskPainted.emit(imageio.from_qimage(s["img"])[..., 3].copy(), s["hiding"])
             return
-        label = "Eraser" if s["erase"] else "Brush stroke"
+        label = "Clone Stamp" if s["clone"] else ("Eraser" if s["erase"] else "Brush stroke")
         self.strokeFinished.emit(imageio.from_qimage(s["img"]), label)
 
     # ------------------------------------------------------------------ eyedropper

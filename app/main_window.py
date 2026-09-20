@@ -45,6 +45,9 @@ TOOLS = [
 ]
 TOOLS[1:1] = SELECT_TOOL_INFO[:3]         # Marquee, Lasso, Wand after Pan
 TOOLS.insert(TOOLS.index(next(t for t in TOOLS if t[0] == "eraser")) + 1, SELECT_TOOL_INFO[3])
+TOOLS.insert(TOOLS.index(next(t for t in TOOLS if t[0] == "heal")) + 1,
+             ("clone", "Clone", "S", "Clone Stamp (S): hold Alt and click a clean spot to copy "
+                                     "from, then brush over what you want to cover."))
 TOOL_HINTS = {k: tip for k, _, _, tip in TOOLS}
 TOOL_HINTS["ai_refine"] = ("Refine Outline: the bright area is kept, the darkened area is "
                            "removed. Drag dots, click a line to add a dot, right-click a dot to "
@@ -383,6 +386,26 @@ class MainWindow(SelectionActions, QMainWindow):
         slider(lay, "Strength", 1, 100, 100, "How strongly each stroke paints or erases.",
                lambda x: setattr(self.state, "strength", x / 100), "%")
 
+        self.opt_group_tools["clone"] = ("clone",)
+        lay = group("clone")
+        self.opt_groups["clone"].setVisible(False)
+        self.clone_aligned = QCheckBox("Keep the source lined up")
+        self.clone_aligned.setChecked(True)
+        self.clone_aligned.setToolTip("On: the copied area follows your brush, so a long area is "
+                                      "covered with one continuous copy. Off: every stroke "
+                                      "starts again from the same spot.")
+        self.clone_aligned.toggled.connect(
+            lambda on: (setattr(self.state, "clone_aligned", on),
+                        setattr(self.state, "clone_offset", None)))
+        lay.addWidget(self.clone_aligned)
+        b = QPushButton("Clear source")
+        b.setToolTip("Forget the copy-from spot, then Alt+click to pick a new one.")
+        b.clicked.connect(self._clear_clone_source)
+        lay.addWidget(b)
+        clone_hint = QLabel("Alt+click the spot to copy from, then brush over the problem.")
+        clone_hint.setObjectName("hintLabel")
+        lay.addWidget(clone_hint)
+
         lay = group("color")
         lay.addWidget(QLabel("Color"))
         self.color_btn = ColorButton(self.state.color, "Brush and text color. Click to change, or "
@@ -636,7 +659,7 @@ class MainWindow(SelectionActions, QMainWindow):
         label = "Refine Outline" if key == "ai_refine" else next(
             l for k, l, _, _ in TOOLS if k == key)
         self.opt_title.setText(f"  {label}  ")
-        show = {"paint": key in ("brush", "eraser"), "color": key in ("brush", "text", "eyedropper"),
+        show = {"paint": key in ("brush", "eraser", "clone"), "color": key in ("brush", "text", "eyedropper"),
                 "crop": key == "crop",
                 "info": key in ("hand", "move", "text", "eyedropper"),
                 "outline": key == "ai_refine", "select": key == "ai_remove"}
@@ -649,6 +672,12 @@ class MainWindow(SelectionActions, QMainWindow):
         if key == "ai_remove" and self.doc:
             self._start_select()
         self._on_tool_selected(key)
+
+    def _clear_clone_source(self):
+        self.state.clone_src = None
+        self.state.clone_offset = None
+        self.canvas.show_clone_marker()
+        self.hint_lbl.setText("Clone source cleared — Alt+click the photo to pick a new one.")
 
     def _bump_size(self, f):
         s = self.state.brush_size
