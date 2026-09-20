@@ -8,12 +8,26 @@ code. Where they must touch shared files, follow the "Shared files" rules below.
   TRACK A - Selections & AI
   TRACK B - Pro Editing & Lightroom Features
 
+PRODUCT RULES - MINIMAL, BEGINNER-FIRST, HACKATHON-READY
+--------------------------------------------------------
+  * A first-time user should understand the main workflow in under 30 seconds.
+  * Prefer one obvious action over several technical controls.
+  * Keep advanced options behind "More" / secondary dialogs.
+  * Every new control gets a plain-English tooltip and a status-bar hint.
+  * If PhotoForge can make a safe decision automatically, it should.
+  * AI results always go on a new layer so the original stays recoverable.
+  * Every destructive-looking action must be undoable.
+  * Show short, useful status text instead of implementation details.
+  * AI routing should explain itself in one line:
+      "Local - fast and private"
+      "GPU - higher-quality generative edit"
+  * Hackathon demo target: visible useful result in about 10 seconds whenever possible.
+
 Workflow for everyone:
-  * One branch + one pull request per numbered task (e.g. branch "a2-ai-framework").
+  * One branch + one pull request per numbered task (e.g. branch "a6-smart-edit-router").
   * Keep PRs small. Rebase on main before opening a PR, and after the other
     track merges something.
-  * Every new control gets a plain-English tooltip and a status-bar hint.
-    PhotoForge is for beginners.
+  * Preserve the minimalist rules above when adding UI.
   * Every change must be undoable (use doc.push_undo before changing state).
 
 
@@ -48,13 +62,67 @@ A2. AI framework  [MOSTLY DONE]
     ~~SAM selection → transparent removal layer → Refine Removal is complete.~~
     Filling the transparent gap intentionally remains part of A6 cloud generative fill.
 
-A6. Describe Your Edit / Generative Fill (cloud: NVIDIA - Qwen-Image-Edit, FLUX.2-klein 4B)
-    - Includes "Fill removed area": fill the transparent gap left by A5.
-    - Note: NVIDIA's Nemotron models are text / vision-language models; they can describe
-      an image but cannot generate pixels, so they are not used for filling.
-    - Text box: "make it sunset", "remove the people", "add snow".
-    - With a selection: only the selected area is regenerated.
-    - Result on a new layer; offer 2-3 variations to pick from.
+A6. Smart Edit Router + Generative Editing  [IN PROGRESS]
+    Product goal:
+      One text box. The user describes the result; PhotoForge decides the cheapest,
+      fastest, most private path that can still do the job well.
+
+    Minimal UI:
+      - One "Describe your edit" text box in the AI panel.
+      - One primary "Apply" button.
+      - If A5 left a transparent gap, also show one "Fill Removed Area" shortcut.
+      - Show one small route badge after analysis:
+          LOCAL  - fast + private
+          GPU    - generative / precision task
+      - Advanced routing controls stay hidden by default.
+      - Result always goes on a new layer.
+      - Cloud-generated edits may offer 2-3 variations in a compact chooser.
+
+    Smart Edit Router:
+      - app/ai/router.py owns routing; image models never decide routing themselves.
+      - A small local LLM classifies the request into structured JSON:
+          route: LOCAL_EDIT | GPU_GENERATE | ASK_CLARIFY
+          operation: short machine-readable intent
+          reason: one short user-facing sentence
+          confidence: 0..1
+          local_adjustments: optional slider changes
+      - Router context includes:
+          prompt
+          whether a selection exists
+          selected-area fraction
+          transparent-area fraction / A5 removal gap
+      - The local LLM is routing-only. It does NOT generate pixels.
+      - Keep a deterministic fallback so Smart Edit still works if the local router
+        model is missing or fails.
+      - Before bundling a router model, verify its license allows commercial use and
+        add it to APPROVED AI MODELS.
+
+    Route LOCAL when the request maps safely to existing deterministic tools:
+      - brighter/darker, contrast, warmth/coolness, tint
+      - saturation/vibrance, highlights/shadows, clarity/dehaze
+      - sharpening / simple non-generative adjustments
+      - future local tools whose output does not require synthesizing new content
+
+    Route GPU when the request requires new pixels or semantic reconstruction:
+      - fill the transparent gap left by A5
+      - add/remove/replace an object
+      - replace a background or sky
+      - "make it sunset", "add snow", scene/content changes
+      - high-detail selection-constrained regeneration
+      - requests where local deterministic tools cannot represent the intent
+
+    Cloud execution:
+      - Use the existing authenticated phrame.tech/api/edit -> NVIDIA path.
+      - Qwen-Image-Edit / FLUX.2-klein 4B remain the approved generative backends.
+      - With a selection: regenerate only the selected area.
+      - Fill Removed Area uses the transparent region as the generation mask.
+      - Show cloud_notice() before the first upload.
+      - Never expose the NVIDIA key in the desktop app.
+      - Output goes on a new layer.
+
+    Hackathon differentiator - "SmartRoute AI":
+      "Simple edits stay local. Complex edits automatically move to the GPU."
+      Demo both paths back-to-back and show the one-line routing reason.
 
 A7. AI Upscale 2x / 4x (Real-ESRGAN: realesr-general-x4v3 fast, x4plus best quality)
 
@@ -153,10 +221,11 @@ These files are used by both tracks. Keep edits to them small and additive
 CURRENT NEXT PRIORITIES
 -----------------------
 Track A:
-  1. A6 Describe Your Edit / Generative Fill.
-     The authenticated Vercel/NVIDIA backend groundwork already exists; build the actual
-     prompt/selection UI, cloud notice, Fill Removed Area flow, new-layer result, and
-     2-3 variations.
+  1. A6 Smart Edit Router + Generative Editing.
+     Phase 1: routing core + tests.
+     Phase 2: one minimal prompt UI + local adjustment executor.
+     Phase 3: GPU generative execution + selection/fill masks + cloud notice.
+     Phase 4: compact 2-3 variation chooser and demo polish.
   2. A7 AI Upscale 2x / 4x with Real-ESRGAN.
 
 Track B:
@@ -171,3 +240,13 @@ Recommended immediate parallel work:
   Track A -> A6
   Track B -> B2
 
+
+HACKATHON DEMO MILESTONE
+------------------------
+  1. Launch -> login -> open photo.
+  2. Prompt: "make this warmer" -> SmartRoute chooses LOCAL and updates non-destructively.
+  3. Prompt: "replace the sky with a dramatic sunset" -> SmartRoute chooses GPU.
+  4. Remove an object with A5 -> "Fill Removed Area" -> GPU reconstructs the gap.
+  5. Every AI result is a new layer and the route/reason is visible.
+  6. Pitch: automatic orchestration reduces latency, cloud cost, and unnecessary uploads
+     while preserving high-quality GPU generation for the edits that actually need it.
