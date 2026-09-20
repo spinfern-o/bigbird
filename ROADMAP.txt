@@ -15,7 +15,8 @@ PRODUCT RULES - MINIMAL, BEGINNER-FIRST, HACKATHON-READY
   * Keep advanced options behind "More" / secondary dialogs.
   * Every new control gets a plain-English tooltip and a status-bar hint.
   * If PhotoForge can make a safe decision automatically, it should.
-  * AI results always go on a new layer so the original stays recoverable.
+  * Generated-pixel AI results always go on a new layer; local slider plans stay
+    non-destructive and undoable.
   * Every destructive-looking action must be undoable.
   * Show short, useful status text instead of implementation details.
   * AI routing should explain itself in one line:
@@ -50,7 +51,7 @@ A2. AI framework  [MOSTLY DONE]
     - ~~AI Settings for local vs optional Brev acceleration.~~ [DONE]
     - ~~Model downloader with progress + cancel in %LOCALAPPDATA%\PhotoForge\models.~~ [DONE]
     - ~~Background-thread AI runner with progress UI.~~ [DONE]
-    - cloud_notice() exists; A6 still needs to show the confirmation in its user-facing UI.
+    - ~~cloud_notice() is shown before Smart Edit sends a photo to the GPU.~~ [DONE in A6 branch]
 
 ~~A3. Remove Background (local: BiRefNet-lite)~~  [DONE]
     ~~Refine Outline, editable points/lines, and new-layer output are complete.~~
@@ -62,7 +63,7 @@ A2. AI framework  [MOSTLY DONE]
     ~~SAM selection → transparent removal layer → Refine Removal is complete.~~
     Filling the transparent gap intentionally remains part of A6 cloud generative fill.
 
-A6. Smart Edit Router + Generative Editing  [IN PROGRESS]
+A6. Smart Edit Router + Generative Editing  [IN PROGRESS: router core + minimal prompt UI]
     Product goal:
       One text box. The user describes the result; PhotoForge decides the cheapest,
       fastest, most private path that can still do the job well.
@@ -75,7 +76,8 @@ A6. Smart Edit Router + Generative Editing  [IN PROGRESS]
           LOCAL  - fast + private
           GPU    - generative / precision task
       - Advanced routing controls stay hidden by default.
-      - Result always goes on a new layer.
+      - Generated-pixel results go on a new layer; local adjustment plans move the
+        existing non-destructive sliders in one undoable step.
       - Cloud-generated edits may offer 2-3 variations in a compact chooser.
 
     Smart Edit Router:
@@ -125,6 +127,7 @@ A6. Smart Edit Router + Generative Editing  [IN PROGRESS]
       Demo both paths back-to-back and show the one-line routing reason.
 
 A7. AI Upscale 2x / 4x (Real-ESRGAN: realesr-general-x4v3 fast, x4plus best quality)
+    Minimal UI: one "Upscale" action, 2x/4x choice, and a collapsed Fast/Best option.
 
 ~~A8. Open-source licenses screen~~  [DONE]
     ~~Help > Open-source Licenses lists the included models/libraries and license info.~~
@@ -170,31 +173,39 @@ Owns:  app/adjustments.py, app/panels.py (AdjustPanel part), app/curves.py (new)
     ~~8-color Hue/Saturation/Luminance mixer, UI, reset behavior, and presets are complete.~~
 
 B2. Tone Curve
+    Minimal UI: show one RGB curve first; R/G/B channels live under "More".
     - Draggable curve widget (RGB + separate R/G/B), plus simple
       "Lights / Darks" region sliders for beginners.
 
 B3. Layer Masks
+    Minimal UI: one "Add Mask" button; mask details appear only after a mask exists.
     - Layer gets an optional `mask` (HxW uint8). Compositing respects it.
     - "Add Mask" button in the Layers panel; paint black/white on the mask with the brush.
     - Mask thumbnail next to the layer thumbnail.
     - (Integration with A1: "Mask from Selection" - whoever lands second adds it.)
 
 B4. Retouch tools  [PARTLY DONE]
+    Minimal UI: keep retouch tools in one compact tool group; show controls only for
+    the active tool.
     - Clone Stamp (Alt+click to set the source).
     - ~~Spot Healing Brush.~~ [DONE]
     - ~~Remove Blemishes, Smooth Skin, Reduce Redness, Heal Selection.~~ [DONE]
     - Red-eye removal.
 
 B5. Local adjustments (Lightroom-style)
+    Minimal UI: choose Linear or Radial, draw once, then reuse the existing adjustment
+    controls instead of creating a second wall of sliders.
     - Graduated filter and Radial filter: drag on the photo, then apply exposure,
       temperature, saturation etc. only inside it.
 
 B6. Library / multiple photos
+    Minimal UI: a collapsible bottom filmstrip, not a separate dashboard.
     - Folder browser with a thumbnail filmstrip; star ratings.
     - Copy / paste adjustment settings between photos.
     - Batch export (same settings, many photos).
 
 B7. App polish & shipping  [PARTLY DONE]
+    Minimal UI: shipping work should remove friction, not add new permanent chrome.
     - ~~Remember window layout, recent files, last folder (QSettings).~~ [DONE]
     - History panel (click any step to jump back).
     - App icon, proper .exe and installer (PyInstaller + Inno Setup).
