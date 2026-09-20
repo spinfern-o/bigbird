@@ -63,6 +63,9 @@ TOOL_HINTS["ai_refine"] = ("Refine Outline: the bright area is kept, the darkene
                            "delete it. Press Enter to apply.")
 OUTLINE_TOOLS = ("ai_remove", "ai_refine")
 LOCAL_TOOLS = {"gradient": "linear", "radial": "radial"}
+# The local filters live in the Local tab (with their own + buttons) rather than the
+# tools bar, which is already full; their keyboard shortcuts still work.
+TOOLBAR_HIDDEN = set(LOCAL_TOOLS)
 
 CROP_RATIOS = [("Free", None), ("Original", "orig"), ("Square 1:1", 1.0), ("Portrait 4:5", 0.8),
                ("Photo 3:2", 1.5), ("Photo 2:3", 2 / 3), ("Wide 16:9", 16 / 9), ("Tall 9:16", 9 / 16)]
@@ -327,10 +330,13 @@ class MainWindow(SelectionActions, QMainWindow):
         tb = QToolBar("Tools")
         tb.setObjectName("toolsBar")
         tb.setMovable(False)
-        tb.setIconSize(QSize(28, 28))
+        tb.setIconSize(QSize(22, 22))   # 13 tools have to fit without scrolling
         tb.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
-        for a in self.tool_actions.values():
-            tb.addAction(a)
+        for key, a in self.tool_actions.items():
+            if key in TOOLBAR_HIDDEN:
+                self.addAction(a)    # keep the shortcut working without a button
+            else:
+                tb.addAction(a)
         self.addToolBar(Qt.LeftToolBarArea, tb)
         self.tools_bar = tb
 
@@ -1715,7 +1721,15 @@ class MainWindow(SelectionActions, QMainWindow):
 <li><b>✨ Auto Enhance</b> fixes brightness and color in one click.</li>
 <li><b>Presets</b> apply a complete look. The thumbnails preview your own photo.</li>
 <li><b>Sliders</b> fine-tune things. Hover a slider to learn what it does; double-click its name to reset it.</li>
+<li><b>Tone Curve</b> (in the Adjust tab) gives you fine control: drag the line up to
+brighten, down to darken, or pick Red/Green/Blue to shift the colours.</li>
+<li><b>🎨 Match Style from a Photo</b> copies the look of a photo you like onto yours.</li>
 <li>Press <b>\\</b> to compare before and after.</li>
+</ul>
+<p><b>Change only part of the photo</b> — the <b>Local</b> tab:</p>
+<ul>
+<li><b>Graduated Filter (G)</b>: drag across the photo to darken a bright sky.</li>
+<li><b>Radial Filter (U)</b>: drag an oval to brighten a face.</li>
 </ul>
 <p><b>Creative editing (like Photoshop)</b> — the tools on the left and the <b>Layers</b> tab:</p>
 <ul>
@@ -1723,6 +1737,10 @@ class MainWindow(SelectionActions, QMainWindow):
 <li><b>Brush / Eraser</b> paint on the selected layer.</li>
 <li><b>Text</b> adds captions on their own layer; move them with the <b>Move</b> tool.</li>
 <li><b>File → Add Photo as Layer</b> to combine images, then play with Opacity and Blend.</li>
+<li><b>Layer masks</b> (Layers tab) hide parts of a layer instead of deleting them —
+tick "Paint on the mask" and the Brush hides while the Eraser brings things back.</li>
+<li><b>Heal (J)</b> removes spots; <b>Clone (S)</b> covers something with a copy of a
+clean area (Alt+click to pick where to copy from).</li>
 <li><b>Filters</b> menu: blur, sharpen, black &amp; white, sepia and more.</li>
 </ul>
 <p><b>Nothing is permanent:</b> Ctrl+Z undoes anything. Your original file is never changed —
@@ -1735,8 +1753,12 @@ use <b>Export</b> to save a finished copy, or <b>Save Project</b> to keep workin
             ("Ctrl+Z / Ctrl+Y", "Undo / Redo"), ("\\", "Before / After"),
             ("Mouse wheel", "Zoom"), ("Space + drag", "Pan"), ("Ctrl+0 / Ctrl+1", "Fit / 100%"),
             ("H V B E C I T", "Pan, Move, Brush, Eraser, Crop, Picker, Text"),
+            ("M L W", "Marquee, Lasso, Magic Wand"),
+            ("J / S", "Spot Healing Brush / Clone Stamp"),
+            ("G / U", "Graduated filter / Radial filter"),
             ("[ / ]", "Smaller / bigger brush"), ("Enter / Esc", "Apply / cancel crop"),
-            ("Ctrl+J", "Duplicate layer"), ("Ctrl+Shift+A", "Auto Enhance")))
+            ("Ctrl+J", "Duplicate layer"), ("Ctrl+Shift+A", "Auto Enhance"),
+            ("Ctrl+Shift+M", "Match Style from a Photo")))
         QMessageBox.information(self, "Keyboard Shortcuts", f"<table>{rows}</table>")
 
     def closeEvent(self, e):
