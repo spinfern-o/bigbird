@@ -103,25 +103,36 @@ Owns:  app/adjustments.py, app/panels.py (AdjustPanel part), app/curves.py (new)
 ~~B1. Color Mixer (HSL)~~  [DONE]
     ~~8-color Hue/Saturation/Luminance mixer, UI, reset behavior, and presets are complete.~~
 
-B2. Tone Curve
-    - Draggable curve widget (RGB + separate R/G/B), plus simple
-      "Lights / Darks" region sliders for beginners.
+~~B2. Tone Curve~~  [DONE]
+    ~~Draggable curve widget (RGB + separate R/G/B) drawn over the live histogram,
+    plus the simple "Lights / Darks" region sliders. Click the line to add a point,
+    drag to bend it, right-click a point to delete it. Monotone cubic interpolation
+    keeps the curve from overshooting. app/curves.py.~~
 
-B3. Layer Masks
-    - Layer gets an optional `mask` (HxW uint8). Compositing respects it.
-    - "Add Mask" button in the Layers panel; paint black/white on the mask with the brush.
-    - Mask thumbnail next to the layer thumbnail.
-    - (Integration with A1: "Mask from Selection" - whoever lands second adds it.)
+~~B3. Layer Masks~~  [DONE]
+    ~~Layer.mask (HxW uint8); compositing, crop/rotate/flip/resize and .pforge projects
+    all respect it. Layers panel has the mask thumbnail, Add Mask, Mask from Selection,
+    Invert, Delete, Apply and a "Paint on the mask" switch (Brush hides, Eraser brings
+    back, with a coloured overlay while you paint). Same commands in Layer > Layer Mask.~~
 
-B4. Retouch tools  [PARTLY DONE]
-    - Clone Stamp (Alt+click to set the source).
-    - ~~Spot Healing Brush.~~ [DONE]
-    - ~~Remove Blemishes, Smooth Skin, Reduce Redness, Heal Selection.~~ [DONE]
-    - Red-eye removal.
+~~B4. Retouch tools~~  [DONE]
+    ~~Spot Healing Brush, Remove Blemishes, Smooth Skin, Reduce Redness, Heal Selection,
+    Clone Stamp (S, Alt+click to set the source, aligned/fixed source, source marker)
+    and Remove Red Eye (whole photo, or only inside a selection).~~
 
-B5. Local adjustments (Lightroom-style)
-    - Graduated filter and Radial filter: drag on the photo, then apply exposure,
-      temperature, saturation etc. only inside it.
+~~B5. Local adjustments (Lightroom-style)~~  [DONE]
+    ~~Graduated filter (G) and Radial filter (U): drag on the photo, then use the new
+    Local tab for exposure, contrast, highlights, shadows, whites, blacks, temperature,
+    tint, vibrance, saturation, clarity, dehaze and sharpening inside that area only,
+    plus Softness and "flip which side is affected". Stored in canvas fractions so the
+    preview and the export match. app/local_adjust.py, app/local_panel.py.~~
+
+~~B8. Match Style from a Photo~~  [DONE]
+    ~~Pick a photo whose look you want; PhotoForge histogram-matches each colour channel
+    and fits the result onto the Tone Curves + Saturation, so the whole look stays
+    visible and editable instead of being baked into pixels. Before/after/reference
+    preview with a Strength slider. Image menu (Ctrl+Shift+M) and the Adjust tab.
+    app/matchstyle.py.~~
 
 B6. Library / multiple photos
     - Folder browser with a thumbnail filmstrip; star ratings.
@@ -162,14 +173,11 @@ Track A:
   2. A7 AI Upscale 2x / 4x with Real-ESRGAN.
 
 Track B:
-  1. B2 Tone Curve.
-  2. B3 Layer Masks.
-  3. Finish B4 with Clone Stamp + Red-eye removal.
-  4. B5 Local adjustments.
-  5. B6 Library / multiple photos.
-  6. Finish B7 with History, packaging/installer, and crash-safe autosave.
+  1. B6 Library / multiple photos (folder browser, ratings, copy/paste settings,
+     batch export).
+  2. Finish B7 with the History panel, packaging/installer, and crash-safe autosave.
 
 Recommended immediate parallel work:
   Track A -> A6
-  Track B -> B2
+  Track B -> B6
 

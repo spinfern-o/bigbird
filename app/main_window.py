@@ -8,14 +8,18 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDialog, QDoc
                                QInputDialog, QLabel, QMainWindow, QMessageBox, QPushButton,
                                QSizePolicy, QSlider, QSpinBox, QStackedWidget, QTabWidget, QToolBar, QVBoxLayout, QWidget)
 
-from . import adjustments, filters, imageio
+from . import adjustments, curves, filters, imageio
 from .auth import AuthManager
 from .canvas import Canvas, ToolState
 from .cloud_dialogs import CloudProjectsDialog, run_cloud
 from . import cloud_projects
 from .dialogs import ExportDialog, NewImageDialog, ResizeDialog, TextDialog
+from .matchstyle import MatchStyleDialog
 from .document import Document
 from .icons import tool_icon
+from . import local_adjust
+from .local_adjust import LocalTool
+from .local_panel import LocalPanel
 from .panels import AdjustPanel, ColorButton, LayersPanel, NoWheelSlider
 from .renderer import Renderer
 from .selection import apply_masked
@@ -44,11 +48,24 @@ TOOLS = [
 ]
 TOOLS[1:1] = SELECT_TOOL_INFO[:3]         # Marquee, Lasso, Wand after Pan
 TOOLS.insert(TOOLS.index(next(t for t in TOOLS if t[0] == "eraser")) + 1, SELECT_TOOL_INFO[3])
+TOOLS.insert(TOOLS.index(next(t for t in TOOLS if t[0] == "heal")) + 1,
+             ("clone", "Clone", "S", "Clone Stamp (S): hold Alt and click a clean spot to copy "
+                                     "from, then brush over what you want to cover."))
+TOOLS += [
+    ("gradient", "Graduated", "G", "Graduated Filter (G): drag across the photo, then use the "
+                                   "Local tab to brighten or darken just that side."),
+    ("radial", "Radial", "U", "Radial Filter (U): drag an oval around something, then use the "
+                              "Local tab to change only what is inside it."),
+]
 TOOL_HINTS = {k: tip for k, _, _, tip in TOOLS}
 TOOL_HINTS["ai_refine"] = ("Refine Outline: the bright area is kept, the darkened area is "
                            "removed. Drag dots, click a line to add a dot, right-click a dot to "
                            "delete it. Press Enter to apply.")
 OUTLINE_TOOLS = ("ai_remove", "ai_refine")
+LOCAL_TOOLS = {"gradient": "linear", "radial": "radial"}
+# The local filters live in the Local tab (with their own + buttons) rather than the
+# tools bar, which is already full; their keyboard shortcuts still work.
+TOOLBAR_HIDDEN = set(LOCAL_TOOLS)
 
 CROP_RATIOS = [("Free", None), ("Original", "orig"), ("Square 1:1", 1.0), ("Portrait 4:5", 0.8),
                ("Photo 3:2", 1.5), ("Photo 2:3", 2 / 3), ("Wide 16:9", 16 / 9), ("Tall 9:16", 9 / 16)]
@@ -162,6 +179,7 @@ class MainWindow(SelectionActions, QMainWindow):
         self._connect()
         self._build_ai()
         self._build_selection()
+        self._build_local()
         self.set_document(None)
         self.select_tool("hand")
 
@@ -199,6 +217,8 @@ class MainWindow(SelectionActions, QMainWindow):
         self.a_reset = A("Reset All Adjustments", self.reset_adjustments)
         self.a_auto = A("✨ Auto Enhance", self.auto_enhance, "Ctrl+Shift+A",
                         "Automatically improve brightness, contrast and color")
+        self.a_match = A("Match Style from a Photo…", self.match_style, "Ctrl+Shift+M",
+                         "Copy the colours and tone of a photo you like onto this one")
         self.a_compare = A("Before / After", self.toggle_compare, "\\",
                            "Show the original photo without adjustments (\\)", checkable=True)
         self.a_fit = A("Fit on Screen", lambda: self.canvas.fit(), "Ctrl+0")
@@ -216,15 +236,25 @@ class MainWindow(SelectionActions, QMainWindow):
         self.a_layer_dup = A("Duplicate Layer", lambda: self.doc.duplicate_layer(), "Ctrl+J")
         self.a_layer_del = A("Delete Layer", lambda: self.doc.delete_layer())
         self.a_layer_merge = A("Merge Down", lambda: self.doc.merge_down(), "Ctrl+Shift+E")
+        self.a_mask_add = A("Add Layer Mask", lambda: self._mask_action("add"), None,
+                            "Hide parts of this layer without erasing them")
+        self.a_mask_sel = A("Mask from Selection", lambda: self._mask_action("from_selection"),
+                            None, "Keep what you selected, hide the rest of this layer")
+        self.a_mask_invert = A("Invert Layer Mask", lambda: self._mask_action("invert"))
+        self.a_mask_del = A("Delete Layer Mask", lambda: self._mask_action("delete"))
+        self.a_mask_apply = A("Apply Layer Mask", lambda: self._mask_action("apply"), None,
+                              "Erase the hidden parts for good and remove the mask")
         self.a_tips = A("Quick Start Guide", self.show_tips, "F1")
         self.a_keys = A("Keyboard Shortcuts", self.show_shortcuts)
 
         self.doc_actions = [self.a_place, self.a_save, self.a_save_as, self.a_cloud_save,
-                            self.a_export, self.a_reset,
+                            self.a_export, self.a_reset, self.a_match,
                             self.a_auto, self.a_compare, self.a_fit, self.a_100, self.a_zin,
                             self.a_zout, self.a_rot_l, self.a_rot_r, self.a_flip_h, self.a_flip_v,
                             self.a_resize, self.a_crop, self.a_flatten, self.a_layer_new,
-                            self.a_layer_dup, self.a_layer_del, self.a_layer_merge]
+                            self.a_layer_dup, self.a_layer_del, self.a_layer_merge,
+                            self.a_mask_add, self.a_mask_sel, self.a_mask_invert,
+                            self.a_mask_del, self.a_mask_apply]
 
         self.tool_group = QActionGroup(self)
         self.tool_group.setExclusionPolicy(QActionGroup.ExclusionPolicy.ExclusiveOptional)
@@ -268,12 +298,17 @@ class MainWindow(SelectionActions, QMainWindow):
         for a in (self.a_undo, self.a_redo, None, self.a_reset):
             m.addSeparator() if a is None else m.addAction(a)
         m = mb.addMenu("&Image")
-        for a in (self.a_auto, None, self.a_crop, self.a_rot_l, self.a_rot_r, self.a_flip_h,
+        for a in (self.a_auto, self.a_match, None, self.a_crop, self.a_rot_l, self.a_rot_r, self.a_flip_h,
                   self.a_flip_v, None, self.a_resize, self.a_flatten):
             m.addSeparator() if a is None else m.addAction(a)
         m = mb.addMenu("&Layer")
         for a in (self.a_layer_new, self.a_layer_dup, self.a_layer_merge, self.a_layer_del):
             m.addAction(a)
+        m.addSeparator()
+        mask_menu = m.addMenu("Layer Mask")
+        for a in (self.a_mask_add, self.a_mask_sel, None, self.a_mask_invert, self.a_mask_del,
+                  self.a_mask_apply):
+            mask_menu.addSeparator() if a is None else mask_menu.addAction(a)
         m = mb.addMenu("Fil&ters")
         note = m.addAction("Filters change the selected layer")
         note.setEnabled(False)
@@ -295,10 +330,13 @@ class MainWindow(SelectionActions, QMainWindow):
         tb = QToolBar("Tools")
         tb.setObjectName("toolsBar")
         tb.setMovable(False)
-        tb.setIconSize(QSize(28, 28))
+        tb.setIconSize(QSize(22, 22))   # 13 tools have to fit without scrolling
         tb.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
-        for a in self.tool_actions.values():
-            tb.addAction(a)
+        for key, a in self.tool_actions.items():
+            if key in TOOLBAR_HIDDEN:
+                self.addAction(a)    # keep the shortcut working without a button
+            else:
+                tb.addAction(a)
         self.addToolBar(Qt.LeftToolBarArea, tb)
         self.tools_bar = tb
 
@@ -364,6 +402,34 @@ class MainWindow(SelectionActions, QMainWindow):
                lambda x: setattr(self.state, "hardness", x / 100), "%")
         slider(lay, "Strength", 1, 100, 100, "How strongly each stroke paints or erases.",
                lambda x: setattr(self.state, "strength", x / 100), "%")
+
+        self.opt_group_tools["local"] = tuple(LOCAL_TOOLS)
+        lay = group("local")
+        self.opt_groups["local"].setVisible(False)
+        local_hint = QLabel("Drag on the photo to place the filter, then open the Local tab on "
+                            "the right to change that area. Drag the dots to adjust it.")
+        local_hint.setObjectName("hintLabel")
+        lay.addWidget(local_hint)
+
+        self.opt_group_tools["clone"] = ("clone",)
+        lay = group("clone")
+        self.opt_groups["clone"].setVisible(False)
+        self.clone_aligned = QCheckBox("Keep the source lined up")
+        self.clone_aligned.setChecked(True)
+        self.clone_aligned.setToolTip("On: the copied area follows your brush, so a long area is "
+                                      "covered with one continuous copy. Off: every stroke "
+                                      "starts again from the same spot.")
+        self.clone_aligned.toggled.connect(
+            lambda on: (setattr(self.state, "clone_aligned", on),
+                        setattr(self.state, "clone_offset", None)))
+        lay.addWidget(self.clone_aligned)
+        b = QPushButton("Clear source")
+        b.setToolTip("Forget the copy-from spot, then Alt+click to pick a new one.")
+        b.clicked.connect(self._clear_clone_source)
+        lay.addWidget(b)
+        clone_hint = QLabel("Alt+click the spot to copy from, then brush over the problem.")
+        clone_hint.setObjectName("hintLabel")
+        lay.addWidget(clone_hint)
 
         lay = group("color")
         lay.addWidget(QLabel("Color"))
@@ -445,14 +511,21 @@ class MainWindow(SelectionActions, QMainWindow):
         c.filesDropped.connect(self._files_dropped)
         c.hint.connect(self.hint_lbl.setText)
         self.renderer.histogramReady.connect(self.adjust_panel.histogram.set_data)
+        self.renderer.histogramReady.connect(self.adjust_panel.curve.set_histogram)
         self.renderer.proxyReady.connect(self._thumb_timer.start)
         ap = self.adjust_panel
         ap.settingChanged.connect(self._setting_changed)
+        ap.curveChanged.connect(self._curve_changed)
         ap.presetChosen.connect(self._preset_chosen)
         ap.autoRequested.connect(self.auto_enhance)
+        ap.matchRequested.connect(self.match_style)
         ap.resetRequested.connect(self.reset_adjustments)
         ap.mixerResetRequested.connect(self.reset_color_mixer)
+        ap.curveResetRequested.connect(self.reset_tone_curve)
         ap.hint.connect(self.hint_lbl.setText)
+        self.canvas.maskPainted.connect(self._mask_painted)
+        self.layers_panel.maskAction.connect(self._mask_action)
+        self.layers_panel.maskPaintToggled.connect(self._mask_paint_toggled)
         lp = self.layers_panel.actions
         lp["new"].clicked.connect(self.a_layer_new.trigger)
         lp["dup"].clicked.connect(self.a_layer_dup.trigger)
@@ -487,6 +560,10 @@ class MainWindow(SelectionActions, QMainWindow):
         self.layers_panel.set_document(doc)
         self.adjust_panel.sync(doc.adjust if doc else adjustments.DEFAULTS)
         self.adjust_panel.setEnabled(doc is not None)
+        self._local_index = -1
+        self._local_tool = None
+        self.local_panel.setEnabled(doc is not None)
+        self._sync_local()
         for a in self.doc_actions + list(self.tool_actions.values()):
             a.setEnabled(doc is not None)
         self._ratio_changed(self.ratio_combo.currentIndex())
@@ -499,6 +576,7 @@ class MainWindow(SelectionActions, QMainWindow):
     def _doc_changed(self, kind):
         if kind == "selection":
             self._selection_changed()
+            self.layers_panel._sync_props()   # "Mask from Selection" needs a selection
             return
         if kind == "all":
             self._selection_changed(from_tool=False)
@@ -508,12 +586,14 @@ class MainWindow(SelectionActions, QMainWindow):
         if kind == "adjust":
             self.renderer.update()
             self.adjust_panel.sync(self.doc.adjust)
+            self._sync_local()
             return
         self.renderer.invalidate()
         if kind in ("structure", "pixels", "all"):
             self.layers_panel.rebuild()
         if kind == "all":
             self.adjust_panel.sync(self.doc.adjust)
+            self._sync_local()
             self._ratio_changed(self.ratio_combo.currentIndex())
         self._update_labels()
 
@@ -543,6 +623,166 @@ class MainWindow(SelectionActions, QMainWindow):
         self.hint_lbl.setText(f"Selected layer: {layer.name}. Brush, eraser, move and filters "
                               "work on this layer.")
 
+    # ================================================================== local adjustments
+    def _build_local(self):
+        """The Local tab: graduated and radial filters."""
+        self._local_index = -1
+        self._local_tool = None
+        self.local_panel = LocalPanel()
+        self.tabs.addTab(self.local_panel, "Local")
+        lp = self.local_panel
+        lp.addRequested.connect(self._local_add)
+        lp.chosen.connect(self._local_chosen)
+        lp.settingChanged.connect(self._local_setting)
+        lp.optionChanged.connect(self._local_option)
+        lp.deleteRequested.connect(lambda: self._local_replace(self._local_index, None,
+                                                               True, "Delete local filter"))
+        lp.hint.connect(self.hint_lbl.setText)
+
+    def _locals(self):
+        return tuple(self.doc.adjust.get(local_adjust.KEY, ())) if self.doc else ()
+
+    def _start_local_tool(self, kind):
+        if self.canvas.outline is not None:
+            self._end_outline()
+        self._local_tool = LocalTool(self.canvas, self.doc.width, self.doc.height, kind,
+                                     self._locals, self._local_changed, self._local_created,
+                                     self._local_chosen)
+        self._local_tool.set_index(self._local_index)
+        self.canvas.outline = self._local_tool
+        self._outline_mode = "local"
+        self.canvas.setFocus()
+        self.tabs.setCurrentWidget(self.local_panel)
+
+    def _local_add(self, kind):
+        """The + buttons in the Local tab just arm the matching tool."""
+        self.select_tool("gradient" if kind == "linear" else "radial")
+        self.hint_lbl.setText("Now drag on the photo: " + (
+            "from the side you want to change towards where the effect should fade out."
+            if kind == "linear" else "outwards from the middle of what you want to change."))
+
+    def _local_created(self, loc):
+        settings = local_adjust.with_added(self.doc.adjust, loc)
+        index = len(settings[local_adjust.KEY]) - 1
+        # Same coalesce key as the drag that follows, so placing a filter is one undo step.
+        self.doc.set_adjustments(settings, "Add " + local_adjust.LABELS[loc["type"]].lower(),
+                                 coalesce=f"local{index}")
+        self._local_index = index
+        self._sync_local()
+
+    def _local_changed(self, index, loc, final):
+        """The tool moved or resized a filter (or the Delete key removed it)."""
+        if loc is None:
+            self._local_replace(index, None, True, "Delete local filter")
+        elif final:
+            self._sync_local()      # the drag already wrote every step
+        else:
+            self._local_replace(index, loc, False, "Move local filter")
+
+    def _local_replace(self, index, loc, final, label):
+        if not self.doc or not 0 <= index < len(self._locals()):
+            return
+        settings = local_adjust.replaced(self.doc.adjust, index, loc)
+        self.doc.set_adjustments(settings, label, coalesce=None if final else f"local{index}")
+        if loc is None:
+            self._local_index = min(index, len(self._locals()) - 1)
+        self._sync_local()
+
+    def _local_chosen(self, index):
+        if 0 <= index < len(self._locals()):
+            self._local_index = index
+            if self._local_tool is not None:
+                self._local_tool.set_index(index)
+            self._sync_local()
+
+    def _local_setting(self, key, value):
+        index = self._local_index
+        locs = self._locals()
+        if not 0 <= index < len(locs):
+            return
+        settings = dict(locs[index].get("settings") or {})
+        settings[key] = value
+        loc = local_adjust.edited(locs[index], settings=settings)
+        self.doc.set_adjustments(local_adjust.replaced(self.doc.adjust, index, loc),
+                                 adjustments.setting_label(key) + " (local)",
+                                 coalesce=f"local:{index}:{key}")
+        self._sync_local()
+
+    def _local_option(self, name, value):
+        index = self._local_index
+        locs = self._locals()
+        if not 0 <= index < len(locs):
+            return
+        loc = local_adjust.edited(locs[index],
+                                  **{name: bool(value) if name == "invert" else int(value)})
+        label = "Flip local filter" if name == "invert" else "Local filter softness"
+        self.doc.set_adjustments(local_adjust.replaced(self.doc.adjust, index, loc), label,
+                                 coalesce=None if name == "invert" else f"local:{index}:feather")
+        self._sync_local()
+
+    def _sync_local(self):
+        locs = self._locals()
+        if self._local_index >= len(locs):
+            self._local_index = len(locs) - 1
+        self.local_panel.sync(self.doc.adjust if self.doc else None, self._local_index)
+        if self._local_tool is not None:
+            self._local_tool.set_index(self._local_index)
+
+    # ================================================================== layer masks
+    def _mask_action(self, cmd):
+        """Add / fill from the selection / invert / delete / apply the layer mask."""
+        d = self.doc
+        if d is None or d.active_layer() is None:
+            return
+        if cmd == "add":
+            if d.add_mask():
+                self.hint_lbl.setText(
+                    "Added a mask. Tick 'Paint on the mask' in the Layers panel, then brush "
+                    "over anything you want to hide — the Eraser brings it back.")
+        elif cmd == "from_selection":
+            if d.selection is None:
+                self.hint_lbl.setText("Select something first (Lasso, Wand or Marquee), then "
+                                      "use Mask from Selection.")
+                return
+            layer = d.active_layer()
+            if layer.mask is None:
+                d.add_mask(from_selection=True, label="Mask from selection")
+            else:
+                d.set_mask(d.selection, "Mask from selection")
+            self.hint_lbl.setText("Only the selected part of this layer is showing now. "
+                                  "Layer ▸ Layer Mask ▸ Invert swaps it around.")
+        elif cmd == "invert":
+            d.invert_mask()
+        elif cmd == "delete":
+            if d.delete_mask():
+                self.hint_lbl.setText("Mask deleted — the whole layer is back.")
+        elif cmd == "apply":
+            if d.apply_mask():
+                self.hint_lbl.setText("Mask applied: the hidden parts are erased now. "
+                                      "Ctrl+Z to undo.")
+        self.layers_panel.rebuild()
+
+    def _mask_paint_toggled(self, on):
+        self.state.mask_paint = on
+        if on:
+            self.select_tool("brush")
+            self.hint_lbl.setText("Painting on the mask: the Brush hides, the Eraser brings "
+                                  "things back. Untick 'Paint on the mask' to go back to "
+                                  "painting the photo.")
+        elif self.doc:
+            self.hint_lbl.setText("Back to painting on the photo itself.")
+
+    def _mask_painted(self, stroke, hiding):
+        """A brush/eraser stroke landed on the active layer's mask."""
+        layer = self.doc.active_layer() if self.doc else None
+        if layer is None or layer.mask is None or not (stroke > 0).any():
+            return
+        m = layer.mask.astype(np.uint16)
+        st = stroke.astype(np.uint16)
+        new = m * (255 - st) // 255 if hiding else m + (255 - m) * st // 255
+        self.doc.set_mask(new.astype(np.uint8),
+                          "Hide with mask" if hiding else "Reveal with mask")
+
     # ================================================================== tools
     def select_tool(self, key):
         if key in self.tool_actions:
@@ -555,7 +795,7 @@ class MainWindow(SelectionActions, QMainWindow):
         label = "Refine Outline" if key == "ai_refine" else next(
             l for k, l, _, _ in TOOLS if k == key)
         self.opt_title.setText(f"  {label}  ")
-        show = {"paint": key in ("brush", "eraser"), "color": key in ("brush", "text", "eyedropper"),
+        show = {"paint": key in ("brush", "eraser", "clone"), "color": key in ("brush", "text", "eyedropper"),
                 "crop": key == "crop",
                 "info": key in ("hand", "move", "text", "eyedropper"),
                 "outline": key == "ai_refine", "select": key == "ai_remove"}
@@ -568,6 +808,16 @@ class MainWindow(SelectionActions, QMainWindow):
         if key == "ai_remove" and self.doc:
             self._start_select()
         self._on_tool_selected(key)
+        if key in LOCAL_TOOLS and self.doc:
+            self._start_local_tool(LOCAL_TOOLS[key])
+        elif self._local_tool is not None and self.canvas.outline is not self._local_tool:
+            self._local_tool = None
+
+    def _clear_clone_source(self):
+        self.state.clone_src = None
+        self.state.clone_offset = None
+        self.canvas.show_clone_marker()
+        self.hint_lbl.setText("Clone source cleared — Alt+click the photo to pick a new one.")
 
     def _bump_size(self, f):
         s = self.state.brush_size
@@ -657,6 +907,26 @@ class MainWindow(SelectionActions, QMainWindow):
         self.doc.adjust[key] = value
         self.renderer.request_update()
 
+    def _curve_changed(self, key, points):
+        """A control point moved in the Tone Curve widget."""
+        if not self.doc:
+            return
+        label = "Tone Curve" if key == "curve_rgb" else \
+            next(f"Tone Curve ({c[1]})" for c in curves.CHANNELS if c[0] == key)
+        self.doc.push_undo(label, coalesce="adj:" + key)
+        self.doc.adjust[key] = points
+        self.renderer.request_update()
+
+    def reset_tone_curve(self):
+        """Straighten every curve and zero Lights/Darks in one undo step."""
+        keys = list(curves.DEFAULTS) + ["curve_lights", "curve_darks"]
+        if self.doc and any(self.doc.adjust.get(k, 0) != adjustments.DEFAULTS[k] for k in keys):
+            s = dict(self.doc.adjust)
+            s.update({k: adjustments.DEFAULTS[k] for k in keys})
+            self.doc.set_adjustments(s, "Reset Tone Curve")
+            self.hint_lbl.setText("Tone Curve reset — your other sliders are untouched. "
+                                  "Ctrl+Z to undo.")
+
     def _preset_chosen(self, name):
         self.doc.set_adjustments(adjustments.preset_settings(name), f"Preset: {name}")
         self.hint_lbl.setText(f"Applied the '{name}' preset. Fine-tune it with the sliders, "
@@ -670,6 +940,32 @@ class MainWindow(SelectionActions, QMainWindow):
         self.doc.set_adjustments(s, "Auto Enhance")
         self.tabs.setCurrentWidget(self.adjust_panel)
         self.hint_lbl.setText("Auto Enhance applied. Tweak any slider you like, or Ctrl+Z to undo.")
+
+    def match_style(self):
+        """Copy the colours and tone of a reference photo onto this one."""
+        if not self.doc:
+            return
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Choose a photo whose look you want to copy", self._last_dir(),
+            imageio.OPEN_FILTER)
+        if not path:
+            return
+        try:
+            ref = imageio.load_image(path)
+        except Exception as e:
+            QMessageBox.warning(self, "Match Style", f"Couldn't open that photo.\n\n{e}")
+            return
+        self._remember_dir(path)
+        preview = self.renderer.proxy
+        if preview is None:
+            preview = self.doc.composite()
+        dlg = MatchStyleDialog(self, preview, ref, self.doc.adjust)
+        if dlg.exec() == QDialog.Accepted:
+            self.doc.set_adjustments(dlg.settings, "Match style")
+            self.tabs.setCurrentWidget(self.adjust_panel)
+            self.hint_lbl.setText(
+                f"Copied the look of '{os.path.basename(path)}'. It landed on the Tone Curve "
+                "and Saturation — open the Tone Curve section to fine-tune it, or Ctrl+Z to undo.")
 
     def reset_adjustments(self):
         if self.doc and not adjustments.is_default(self.doc.adjust):
@@ -1425,7 +1721,15 @@ class MainWindow(SelectionActions, QMainWindow):
 <li><b>✨ Auto Enhance</b> fixes brightness and color in one click.</li>
 <li><b>Presets</b> apply a complete look. The thumbnails preview your own photo.</li>
 <li><b>Sliders</b> fine-tune things. Hover a slider to learn what it does; double-click its name to reset it.</li>
+<li><b>Tone Curve</b> (in the Adjust tab) gives you fine control: drag the line up to
+brighten, down to darken, or pick Red/Green/Blue to shift the colours.</li>
+<li><b>🎨 Match Style from a Photo</b> copies the look of a photo you like onto yours.</li>
 <li>Press <b>\\</b> to compare before and after.</li>
+</ul>
+<p><b>Change only part of the photo</b> — the <b>Local</b> tab:</p>
+<ul>
+<li><b>Graduated Filter (G)</b>: drag across the photo to darken a bright sky.</li>
+<li><b>Radial Filter (U)</b>: drag an oval to brighten a face.</li>
 </ul>
 <p><b>Creative editing (like Photoshop)</b> — the tools on the left and the <b>Layers</b> tab:</p>
 <ul>
@@ -1433,6 +1737,10 @@ class MainWindow(SelectionActions, QMainWindow):
 <li><b>Brush / Eraser</b> paint on the selected layer.</li>
 <li><b>Text</b> adds captions on their own layer; move them with the <b>Move</b> tool.</li>
 <li><b>File → Add Photo as Layer</b> to combine images, then play with Opacity and Blend.</li>
+<li><b>Layer masks</b> (Layers tab) hide parts of a layer instead of deleting them —
+tick "Paint on the mask" and the Brush hides while the Eraser brings things back.</li>
+<li><b>Heal (J)</b> removes spots; <b>Clone (S)</b> covers something with a copy of a
+clean area (Alt+click to pick where to copy from).</li>
 <li><b>Filters</b> menu: blur, sharpen, black &amp; white, sepia and more.</li>
 </ul>
 <p><b>Nothing is permanent:</b> Ctrl+Z undoes anything. Your original file is never changed —
@@ -1445,8 +1753,12 @@ use <b>Export</b> to save a finished copy, or <b>Save Project</b> to keep workin
             ("Ctrl+Z / Ctrl+Y", "Undo / Redo"), ("\\", "Before / After"),
             ("Mouse wheel", "Zoom"), ("Space + drag", "Pan"), ("Ctrl+0 / Ctrl+1", "Fit / 100%"),
             ("H V B E C I T", "Pan, Move, Brush, Eraser, Crop, Picker, Text"),
+            ("M L W", "Marquee, Lasso, Magic Wand"),
+            ("J / S", "Spot Healing Brush / Clone Stamp"),
+            ("G / U", "Graduated filter / Radial filter"),
             ("[ / ]", "Smaller / bigger brush"), ("Enter / Esc", "Apply / cancel crop"),
-            ("Ctrl+J", "Duplicate layer"), ("Ctrl+Shift+A", "Auto Enhance")))
+            ("Ctrl+J", "Duplicate layer"), ("Ctrl+Shift+A", "Auto Enhance"),
+            ("Ctrl+Shift+M", "Match Style from a Photo")))
         QMessageBox.information(self, "Keyboard Shortcuts", f"<table>{rows}</table>")
 
     def closeEvent(self, e):

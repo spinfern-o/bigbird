@@ -116,10 +116,42 @@ def _heal(p, c):
     p.restore()
 
 
+def _clone(p, c):
+    """A rubber stamp: flat base, waist, round knob."""
+    p.drawLine(QPointF(14, 54), QPointF(50, 54))
+    p.drawRect(QRectF(20, 34, 24, 14))
+    p.drawLine(QPointF(26, 34), QPointF(30, 22))
+    p.drawLine(QPointF(38, 34), QPointF(34, 22))
+    p.setBrush(c)
+    p.drawEllipse(QPointF(32, 16), 7, 7)
+
+
+def _gradient(p, c):
+    """Graduated filter: a half-shaded frame with the dividing line."""
+    p.drawRect(QRectF(8, 12, 48, 40))
+    p.setBrush(c)
+    p.setPen(Qt.NoPen)
+    p.drawRect(QRectF(10, 14, 44, 12))
+    p.setBrush(QColor(c.red(), c.green(), c.blue(), 110))
+    p.drawRect(QRectF(10, 26, 44, 8))
+    p.setBrush(QColor(c.red(), c.green(), c.blue(), 45))
+    p.drawRect(QRectF(10, 34, 44, 8))
+
+
+def _radial(p, c):
+    p.drawEllipse(QPointF(32, 32), 22, 16)
+    p.save()
+    p.setPen(QPen(c, 2.5, Qt.DashLine))
+    p.drawEllipse(QPointF(32, 32), 11, 8)
+    p.restore()
+    p.setBrush(c)
+    p.drawEllipse(QPointF(32, 32), 2.5, 2.5)
+
+
 DRAWERS = {"hand": _hand, "move": _move, "brush": _brush, "eraser": _eraser,
            "crop": _crop, "eyedropper": _eyedropper, "text": _text,
            "ai_remove": _ai_remove, "marquee": _marquee, "lasso": _lasso, "wand": _wand,
-           "heal": _heal}
+           "heal": _heal, "clone": _clone, "gradient": _gradient, "radial": _radial}
 
 
 def tool_icon(name):

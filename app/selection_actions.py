@@ -52,6 +52,7 @@ class SelectionActions:
             "inverse": A("Inverse", lambda: self._sel_command("inverse"), "Ctrl+Shift+I"),
             "subject": A("Subject (AI)", lambda: self._sel_command("subject")),
             "skin": A("Skin Tones", lambda: self._sel_command("skin")),
+            "redeye": A("Remove Red Eye", lambda: self._sel_command("redeye")),
             "feather": A("Feather…", lambda: self._sel_command("feather_ask"), "Shift+F6"),
             "expand": A("Expand…", lambda: self._sel_command("expand_ask")),
             "contract": A("Contract…", lambda: self._sel_command("contract_ask")),
@@ -71,7 +72,7 @@ class SelectionActions:
         self.a_layer_dup.setShortcut(QKeySequence())
         m = QMenu("&Select", self)
         self.menuBar().insertMenu(self.ai_menu.menuAction(), m)
-        for k in ("all", "deselect", "inverse", None, "subject", "skin", None):
+        for k in ("all", "deselect", "inverse", None, "subject", "skin", "redeye", None):
             m.addSeparator() if k is None else m.addAction(acts[k])
         mod = m.addMenu("Modify")
         for k in ("feather", "expand", "contract", "smooth", "border"):
@@ -179,7 +180,7 @@ class SelectionActions:
         """Called by select_tool: install the interactive selection tool, if any."""
         if key == "heal":
             self.state.brush_size = self.heal_size.value()
-        elif key in ("brush", "eraser"):
+        elif key in ("brush", "eraser", "clone"):
             self.state.brush_size = self.size_slider.value()
         if key not in SELECT_TOOLS or not self.doc:
             return
@@ -271,6 +272,8 @@ class SelectionActions:
                 d.set_selection(None, "Deselect")
         elif cmd == "subject":
             self._select_subject()
+        elif cmd == "redeye":
+            self._do_redeye(d.selection)
         elif cmd == "skin":
             mask = selection.skin_tones(d.composite())
             if (mask > 127).mean() < 0.001:
@@ -313,6 +316,21 @@ class SelectionActions:
             if sel is None:
                 return
             getattr(self, "_do_" + cmd)(sel)
+
+    def _do_redeye(self, sel):
+        """Fix flash red-eye. With nothing selected, the whole photo is searched."""
+        d = self.doc
+        whole = sel is None
+        if whole:
+            sel = np.full((d.height, d.width), 255, np.uint8)
+        n = self._retouch("Remove red eye", lambda rgb, s: retouch.remove_red_eye(rgb, s), sel)
+        if n:
+            self.hint_lbl.setText(f"Fixed {n} red eye{'s' if n != 1 else ''}. Ctrl+Z to undo.")
+        elif n == 0:
+            self.hint_lbl.setText(
+                "No red eyes found" + (" in the photo. Try selecting around the eyes first "
+                                       "(Marquee, M) and trying again."
+                                       if whole else " in the selection."))
 
     def _do_via_cut(self, sel):
         if self._target_layer():
@@ -462,7 +480,7 @@ class SelectionActions:
                 m.addSeparator() if k is None else m.addAction(a[k])
             m.addSeparator()
             for text, cmd in (("Remove Blemishes", "blemishes"), ("Smooth Skin", "smooth_skin"),
-                              ("Heal Selection", "heal")):
+                              ("Remove Red Eye", "redeye"), ("Heal Selection", "heal")):
                 act = QAction(text, m)
                 act.triggered.connect(lambda _=False, c=cmd: self._sel_command(c))
                 m.addAction(act)
@@ -471,6 +489,7 @@ class SelectionActions:
                 m.addAction(a[k])
             m.addAction(a["subject"])
             m.addAction(a["skin"])
+            m.addAction(a["redeye"])
         m.exec(global_pos)
 
 
