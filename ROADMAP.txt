@@ -16,6 +16,8 @@ Workflow for everyone:
     PhotoForge is for beginners.
   * Every change must be undoable (use doc.push_undo before changing state).
 
+For claude:
+the login doesnt save when i enter my password, when i finish registering the tab should automatically close and the app should automatically be connected and know that i have signed up, signign me in instantly to my own dashboard/account. check if vercel is connected properly to supabase propery and if running locally is fine. run your own tests and push through github instead of vercel. look again at the roadmap and focus on a6 after debugging. 
 
 --------------------------------------------------------------------------------
 TRACK A - SELECTIONS & AI
