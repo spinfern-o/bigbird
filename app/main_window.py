@@ -8,12 +8,13 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDialog, QDoc
                                QInputDialog, QLabel, QMainWindow, QMessageBox, QPushButton,
                                QSizePolicy, QSlider, QSpinBox, QStackedWidget, QTabWidget, QToolBar, QVBoxLayout, QWidget)
 
-from . import adjustments, filters, imageio
+from . import adjustments, curves, filters, imageio
 from .auth import AuthManager
 from .canvas import Canvas, ToolState
 from .cloud_dialogs import CloudProjectsDialog, run_cloud
 from . import cloud_projects
 from .dialogs import ExportDialog, NewImageDialog, ResizeDialog, TextDialog
+from .matchstyle import MatchStyleDialog
 from .document import Document
 from .icons import tool_icon
 from .panels import AdjustPanel, ColorButton, LayersPanel, NoWheelSlider
@@ -199,6 +200,8 @@ class MainWindow(SelectionActions, QMainWindow):
         self.a_reset = A("Reset All Adjustments", self.reset_adjustments)
         self.a_auto = A("✨ Auto Enhance", self.auto_enhance, "Ctrl+Shift+A",
                         "Automatically improve brightness, contrast and color")
+        self.a_match = A("Match Style from a Photo…", self.match_style, "Ctrl+Shift+M",
+                         "Copy the colours and tone of a photo you like onto this one")
         self.a_compare = A("Before / After", self.toggle_compare, "\\",
                            "Show the original photo without adjustments (\\)", checkable=True)
         self.a_fit = A("Fit on Screen", lambda: self.canvas.fit(), "Ctrl+0")
@@ -220,7 +223,7 @@ class MainWindow(SelectionActions, QMainWindow):
         self.a_keys = A("Keyboard Shortcuts", self.show_shortcuts)
 
         self.doc_actions = [self.a_place, self.a_save, self.a_save_as, self.a_cloud_save,
-                            self.a_export, self.a_reset,
+                            self.a_export, self.a_reset, self.a_match,
                             self.a_auto, self.a_compare, self.a_fit, self.a_100, self.a_zin,
                             self.a_zout, self.a_rot_l, self.a_rot_r, self.a_flip_h, self.a_flip_v,
                             self.a_resize, self.a_crop, self.a_flatten, self.a_layer_new,
@@ -268,7 +271,7 @@ class MainWindow(SelectionActions, QMainWindow):
         for a in (self.a_undo, self.a_redo, None, self.a_reset):
             m.addSeparator() if a is None else m.addAction(a)
         m = mb.addMenu("&Image")
-        for a in (self.a_auto, None, self.a_crop, self.a_rot_l, self.a_rot_r, self.a_flip_h,
+        for a in (self.a_auto, self.a_match, None, self.a_crop, self.a_rot_l, self.a_rot_r, self.a_flip_h,
                   self.a_flip_v, None, self.a_resize, self.a_flatten):
             m.addSeparator() if a is None else m.addAction(a)
         m = mb.addMenu("&Layer")
@@ -445,13 +448,17 @@ class MainWindow(SelectionActions, QMainWindow):
         c.filesDropped.connect(self._files_dropped)
         c.hint.connect(self.hint_lbl.setText)
         self.renderer.histogramReady.connect(self.adjust_panel.histogram.set_data)
+        self.renderer.histogramReady.connect(self.adjust_panel.curve.set_histogram)
         self.renderer.proxyReady.connect(self._thumb_timer.start)
         ap = self.adjust_panel
         ap.settingChanged.connect(self._setting_changed)
+        ap.curveChanged.connect(self._curve_changed)
         ap.presetChosen.connect(self._preset_chosen)
         ap.autoRequested.connect(self.auto_enhance)
+        ap.matchRequested.connect(self.match_style)
         ap.resetRequested.connect(self.reset_adjustments)
         ap.mixerResetRequested.connect(self.reset_color_mixer)
+        ap.curveResetRequested.connect(self.reset_tone_curve)
         ap.hint.connect(self.hint_lbl.setText)
         lp = self.layers_panel.actions
         lp["new"].clicked.connect(self.a_layer_new.trigger)
@@ -657,6 +664,26 @@ class MainWindow(SelectionActions, QMainWindow):
         self.doc.adjust[key] = value
         self.renderer.request_update()
 
+    def _curve_changed(self, key, points):
+        """A control point moved in the Tone Curve widget."""
+        if not self.doc:
+            return
+        label = "Tone Curve" if key == "curve_rgb" else \
+            next(f"Tone Curve ({c[1]})" for c in curves.CHANNELS if c[0] == key)
+        self.doc.push_undo(label, coalesce="adj:" + key)
+        self.doc.adjust[key] = points
+        self.renderer.request_update()
+
+    def reset_tone_curve(self):
+        """Straighten every curve and zero Lights/Darks in one undo step."""
+        keys = list(curves.DEFAULTS) + ["curve_lights", "curve_darks"]
+        if self.doc and any(self.doc.adjust.get(k, 0) != adjustments.DEFAULTS[k] for k in keys):
+            s = dict(self.doc.adjust)
+            s.update({k: adjustments.DEFAULTS[k] for k in keys})
+            self.doc.set_adjustments(s, "Reset Tone Curve")
+            self.hint_lbl.setText("Tone Curve reset — your other sliders are untouched. "
+                                  "Ctrl+Z to undo.")
+
     def _preset_chosen(self, name):
         self.doc.set_adjustments(adjustments.preset_settings(name), f"Preset: {name}")
         self.hint_lbl.setText(f"Applied the '{name}' preset. Fine-tune it with the sliders, "
@@ -670,6 +697,32 @@ class MainWindow(SelectionActions, QMainWindow):
         self.doc.set_adjustments(s, "Auto Enhance")
         self.tabs.setCurrentWidget(self.adjust_panel)
         self.hint_lbl.setText("Auto Enhance applied. Tweak any slider you like, or Ctrl+Z to undo.")
+
+    def match_style(self):
+        """Copy the colours and tone of a reference photo onto this one."""
+        if not self.doc:
+            return
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Choose a photo whose look you want to copy", self._last_dir(),
+            imageio.OPEN_FILTER)
+        if not path:
+            return
+        try:
+            ref = imageio.load_image(path)
+        except Exception as e:
+            QMessageBox.warning(self, "Match Style", f"Couldn't open that photo.\n\n{e}")
+            return
+        self._remember_dir(path)
+        preview = self.renderer.proxy
+        if preview is None:
+            preview = self.doc.composite()
+        dlg = MatchStyleDialog(self, preview, ref, self.doc.adjust)
+        if dlg.exec() == QDialog.Accepted:
+            self.doc.set_adjustments(dlg.settings, "Match style")
+            self.tabs.setCurrentWidget(self.adjust_panel)
+            self.hint_lbl.setText(
+                f"Copied the look of '{os.path.basename(path)}'. It landed on the Tone Curve "
+                "and Saturation — open the Tone Curve section to fine-tune it, or Ctrl+Z to undo.")
 
     def reset_adjustments(self):
         if self.doc and not adjustments.is_default(self.doc.adjust):

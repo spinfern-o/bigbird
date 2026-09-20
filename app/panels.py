@@ -7,7 +7,8 @@ from PySide6.QtWidgets import (QAbstractItemView, QColorDialog, QComboBox, QFram
                                QScrollArea, QSizePolicy, QSlider, QStackedWidget, QToolButton,
                                QVBoxLayout, QWidget)
 
-from . import adjustments, imageio
+from . import adjustments, curves, imageio
+from .curves import CurveEditor
 from .document import BLEND_MODES
 
 SLIDER_GRADIENTS = {
@@ -198,10 +199,13 @@ class Section(QWidget):
 class AdjustPanel(QScrollArea):
     """Histogram, one-click presets, and develop sliders."""
     settingChanged = Signal(str, int)
+    curveChanged = Signal(str, object)     # (curve settings key, control points)
     presetChosen = Signal(str)
     autoRequested = Signal()
+    matchRequested = Signal()
     resetRequested = Signal()
     mixerResetRequested = Signal()
+    curveResetRequested = Signal()
     hint = Signal(str)               # plain-English message for the status bar
 
     def __init__(self):
@@ -229,6 +233,13 @@ class AdjustPanel(QScrollArea):
         self.auto_btn.clicked.connect(self.autoRequested)
         self.reset_btn.clicked.connect(self.resetRequested)
 
+        self.match_btn = QPushButton("🎨 Match Style from a Photo…")
+        self.match_btn.setToolTip("Pick a photo you like the look of — PhotoForge copies its "
+                                  "colours and tone onto this one.\nYou can fine-tune the "
+                                  "result with the sliders and the Tone Curve afterwards.")
+        self.match_btn.clicked.connect(self.matchRequested)
+        lay.addWidget(self.match_btn)
+
         presets = Section("Presets — one-click looks")
         grid = QGridLayout()
         grid.setSpacing(4)
@@ -251,7 +262,7 @@ class AdjustPanel(QScrollArea):
         sections = {}
         for sec, key, label, lo, hi, tip in adjustments.SLIDERS:
             if sec not in sections:
-                sections[sec] = Section(sec, expanded=sec in ("Light", "Color"))
+                sections[sec] = Section(sec, expanded=sec in ("Light", "Color", "Tone Curve"))
                 lay.addWidget(sections[sec])
             r = SliderRow(key, label, lo, hi, tip)
             r.valueChanged.connect(self.settingChanged)
@@ -259,8 +270,55 @@ class AdjustPanel(QScrollArea):
             self.rows[key] = r
         self.mixer = self._build_color_mixer()
         lay.insertWidget(lay.indexOf(sections["Color"]) + 1, self.mixer)
+        self._build_tone_curve(sections["Tone Curve"])
         lay.addStretch(1)
         self.setWidget(root)
+
+    def _build_tone_curve(self, sec):
+        """Tone Curve: a draggable curve plus the two beginner Lights/Darks sliders."""
+        head = QWidget()
+        hl = QVBoxLayout(head)
+        hl.setContentsMargins(0, 0, 0, 0)
+        hl.setSpacing(4)
+        intro = QLabel("Drag the line up to brighten, down to darken. The left of the line is "
+                       "the dark parts of your photo, the right is the bright parts.")
+        intro.setWordWrap(True)
+        intro.setObjectName("hintLabel")
+        hl.addWidget(intro)
+
+        chans = QHBoxLayout()
+        chans.setSpacing(4)
+        self.curve_btns = []
+        for i, (_key, label, color) in enumerate(curves.CHANNELS):
+            b = QToolButton()
+            b.setText(label)
+            b.setCheckable(True)
+            b.setAutoExclusive(True)
+            b.setChecked(i == 0)
+            b.setToolTip("Change the brightness of the whole photo." if i == 0 else
+                         f"Change only the {label.lower()} light in the photo — a quick way to "
+                         f"warm it up, cool it down or add a colour tint.")
+            b.setStyleSheet(f"QToolButton {{ padding: 2px 10px; color: {color}; }}"
+                            "QToolButton:checked { background: #3d4f66; color: white;"
+                            " border-radius: 4px; }")
+            b.clicked.connect(lambda _=False, n=i: self.curve.set_channel(n))
+            chans.addWidget(b)
+            self.curve_btns.append(b)
+        chans.addStretch(1)
+        hl.addLayout(chans)
+
+        self.curve = CurveEditor()
+        self.curve.curveChanged.connect(self.curveChanged)
+        self.curve.hint.connect(self.hint)
+        hl.addWidget(self.curve)
+        sec.body_lay.insertWidget(0, head)
+
+        self.curve_reset_btn = QPushButton("Reset Tone Curve")
+        tip = "Put the curve back to a straight line and Lights/Darks back to zero."
+        self.curve_reset_btn.setToolTip(tip)
+        self.curve_reset_btn.setStatusTip(tip)
+        self.curve_reset_btn.clicked.connect(self.curveResetRequested)
+        sec.body_lay.addWidget(self.curve_reset_btn)
 
     def _build_color_mixer(self):
         """Color Mixer (HSL): pick one of eight colors, then bend only that color."""
@@ -330,6 +388,7 @@ class AdjustPanel(QScrollArea):
         for k, r in self.rows.items():
             r.set_silently(settings.get(k, 0))
         self._sync_mixer_swatches(settings)
+        self.curve.sync(settings)
 
     def _sync_mixer_swatches(self, settings):
         """Outline the swatches of colors that have been edited, so nothing is hidden."""

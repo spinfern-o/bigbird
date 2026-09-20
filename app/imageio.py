@@ -8,6 +8,8 @@ import numpy as np
 from PIL import Image, ImageOps
 from PySide6.QtGui import QImage
 
+from . import adjustments
+
 try:
     import rawpy
 except ImportError:  # RAW support is optional
@@ -111,5 +113,5 @@ def load_project(path):
             layers.append(Layer(info["name"], px, info["visible"], info["opacity"], info["blend"]))
     doc = Document(meta["width"], meta["height"], layers)
     doc.active = min(meta.get("active", 0), len(layers) - 1)
-    doc.adjust.update(meta.get("adjust", {}))
+    doc.adjust.update(adjustments.normalized(meta.get("adjust", {})))
     return doc
