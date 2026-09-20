@@ -30,19 +30,25 @@ class _Job(QRunnable):
             pass
 
 
-def run_cloud(parent, title, busy_text, fn, on_done):
-    """Run a cloud call in the background with a progress dialog; on_done(result) on success."""
+def run_cloud(parent, title, busy_text, fn, on_done, on_error=None, quiet=False):
+    """Run a cloud call in the background; on_done(result) on success.
+
+    quiet=True skips the progress dialog and, with on_error, reports failures in the
+    calling widget instead of a pop-up (used by the start screen)."""
     dlg = QProgressDialog(busy_text, None, 0, 0, parent)
     dlg.setWindowTitle(title)
     dlg.setWindowModality(Qt.WindowModal)
-    dlg.setMinimumDuration(300)
+    dlg.setMinimumDuration(1 << 30 if quiet else 300)
     dlg.setCancelButton(None)
     sig = _Signals(parent)
 
     def done(result, error):
         dlg.close()
         if error:
-            QMessageBox.warning(parent, title, error)
+            if on_error:
+                on_error(error)
+            elif not quiet:
+                QMessageBox.warning(parent, title, error)
         else:
             on_done(result)
 
@@ -69,6 +75,58 @@ class _ThumbLoader(QObject):
                 continue
             if data:
                 self.loaded.emit(index, data)
+
+
+class CloudProjectsGrid(QListWidget):
+    """Thumbnails of the signed-in user's cloud projects. Clicking one opens it."""
+    opened = Signal(object)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setViewMode(QListWidget.IconMode)
+        self.setIconSize(QSize(150, 104))
+        self.setGridSize(QSize(176, 166))
+        self.setResizeMode(QListWidget.Adjust)
+        self.setMovement(QListWidget.Static)
+        self.setWordWrap(True)
+        self.setSpacing(6)
+        self.setObjectName("projectsGrid")
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._loader = None
+        self.itemClicked.connect(self._clicked)
+
+    def _clicked(self, item):
+        row = item.data(Qt.UserRole)
+        if row:
+            self.opened.emit(row)
+
+    def set_rows(self, rows, api=None):
+        self.clear()
+        for r in rows:
+            when = (r.get("updated_at") or "")[:10]
+            item = QListWidgetItem(f"{r['name']}\n{when}")
+            item.setData(Qt.UserRole, r)
+            item.setToolTip(f"{r['name']} — {r.get('width', '?')} × {r.get('height', '?')} px, "
+                            f"{(r.get('size_bytes') or 0) / 1048576:.1f} MB\nClick to open")
+            item.setTextAlignment(Qt.AlignHCenter | Qt.AlignTop)
+            self.addItem(item)
+        # Size to the cards so a few projects stay centred on the start screen.
+        per_row = min(5, max(1, len(rows)))
+        lines = min(2, (len(rows) + 4) // 5) or 1
+        self.setFixedWidth(per_row * self.gridSize().width() + 28)
+        self.setFixedHeight(lines * self.gridSize().height() + 16)
+        if api is not None and rows:
+            wanted = [(i, r["thumb_path"]) for i, r in enumerate(rows) if r.get("thumb_path")]
+            if wanted:
+                self._loader = _ThumbLoader(self, api, wanted)
+                self._loader.loaded.connect(self._set_thumb)
+                self._loader.start()
+
+    def _set_thumb(self, index, data):
+        item = self.item(index)
+        pix = QPixmap()
+        if item and data and pix.loadFromData(data):
+            item.setIcon(QIcon(pix))
 
 
 class CloudProjectsDialog(QDialog):

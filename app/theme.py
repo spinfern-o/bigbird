@@ -49,6 +49,13 @@ QLabel#hintLabel {{ color: #a8a8b0; }}
 QLabel#welcomeTitle {{ font-size: 48px; font-weight: 800; color: white; }}
 QLabel#welcomeSub {{ font-size: 18px; color: #b8b8c0; }}
 QLabel#welcomeHint {{ color: #8a8a92; }}
+QLabel#welcomeSection {{ color: #cfcfd6; font-size: 15px; font-weight: bold; }}
+QListWidget#projectsGrid {{ background: transparent; border: none; }}
+QListWidget#projectsGrid::item {{ background: #2e2e33; border: 1px solid #3a3a40;
+                                  border-radius: 10px; padding: 6px; color: #d8d8de; }}
+QListWidget#projectsGrid::item:hover {{ border-color: #2f7fe0; background: #34343a; }}
+QListWidget#projectsGrid::item:selected {{ border-color: #2f7fe0; background: #3d4f66;
+                                           color: white; }}
 QLabel#stepCard {{ background: #2e2e33; border: 1px solid #3a3a40; border-radius: 10px;
                    padding: 12px; }}
 QFrame#aiCard {{ background: #2e2e33; border: 1px solid #3a3a40; border-radius: 10px; }}
