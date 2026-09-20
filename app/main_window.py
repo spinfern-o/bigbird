@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDialog, QDoc
 from . import adjustments, filters, imageio
 from .auth import AuthManager
 from .canvas import Canvas, ToolState
-from .cloud_dialogs import CloudProjectsDialog, run_cloud
+from .cloud_dialogs import CloudProjectsDialog, CloudProjectsGrid, run_cloud
 from . import cloud_projects
 from .dialogs import ExportDialog, NewImageDialog, ResizeDialog, TextDialog
 from .document import Document
@@ -88,6 +88,25 @@ class WelcomeWidget(QWidget):
         lay.addWidget(drop)
         lay.addSpacing(36)
 
+        # Your cloud projects (filled in when signed in)
+        self.cloud_title = QLabel("Your cloud projects")
+        self.cloud_title.setObjectName("welcomeSection")
+        self.cloud_title.setAlignment(Qt.AlignCenter)
+        lay.addWidget(self.cloud_title)
+        self.cloud_note = QLabel()
+        self.cloud_note.setObjectName("welcomeHint")
+        self.cloud_note.setAlignment(Qt.AlignCenter)
+        self.cloud_note.setWordWrap(True)
+        lay.addWidget(self.cloud_note)
+        grid_row = QHBoxLayout()
+        grid_row.addStretch(1)
+        self.projects = CloudProjectsGrid()
+        self.projects.opened.connect(main.open_cloud_project)
+        grid_row.addWidget(self.projects)
+        grid_row.addStretch(1)
+        lay.addLayout(grid_row)
+        lay.addSpacing(24)
+
         steps = QHBoxLayout()
         steps.addStretch(1)
         for n, head, body in (("1", "Open", "Open a photo (JPG, PNG, even camera RAW)."),
@@ -104,6 +123,16 @@ class WelcomeWidget(QWidget):
         steps.addStretch(1)
         lay.addLayout(steps)
         lay.addStretch(3)
+        self.show_projects(None, "")
+
+    def show_projects(self, rows, message, api=None):
+        """rows=None hides the grid and shows `message` (signed out, loading, error)."""
+        self.cloud_note.setText(message)
+        self.cloud_note.setVisible(bool(message))
+        self.projects.setVisible(bool(rows))
+        self.cloud_title.setVisible(bool(rows) or bool(message))
+        if rows:
+            self.projects.set_rows(rows, api)
 
 
 class MainWindow(SelectionActions, QMainWindow):
@@ -154,6 +183,7 @@ class MainWindow(SelectionActions, QMainWindow):
         if auth is not None:
             self.auth.setParent(self)
         self.auth.authChanged.connect(self._update_auth_ui)
+        self.auth.authChanged.connect(lambda _: self.refresh_cloud_projects())
 
         self._build_actions()
         self._build_menus()
@@ -481,6 +511,7 @@ class MainWindow(SelectionActions, QMainWindow):
         else:
             self.canvas.clear()
             self.center.setCurrentWidget(self.welcome)
+            self.refresh_cloud_projects()
         self.a_compare.setChecked(False)
         self.renderer.show_original = False
         self.renderer.set_document(doc)
@@ -945,6 +976,7 @@ class MainWindow(SelectionActions, QMainWindow):
             doc.display_name = name
             doc.dirty = False
             self._update_labels()
+            self.refresh_cloud_projects()
             self.hint_lbl.setText(
                 f"Saved '{name}' to your phrame.tech account "
                 f"({len(data) / 1048576:.1f} MB)."
@@ -970,6 +1002,34 @@ class MainWindow(SelectionActions, QMainWindow):
                 self._cloud_download(api, dlg.chosen)
 
         run_cloud(self, "Open from Cloud", "Loading your projects…", api.list_projects, show)
+
+    def open_cloud_project(self, row):
+        """Open a project picked from the start screen."""
+        api = self._cloud_api()
+        if api is not None:
+            self._cloud_download(api, row)
+
+    def refresh_cloud_projects(self):
+        """Fill the start screen with the signed-in user's projects (quietly)."""
+        welcome = self.welcome
+        if not self.auth.is_logged_in:
+            welcome.show_projects(None, "Log in (top right) to see projects you saved to your "
+                                        "account, and to open them on any computer.")
+            return
+        api = cloud_projects.Api(self.auth)
+        welcome.show_projects(None, "Loading your cloud projects…")
+
+        def done(rows):
+            if rows:
+                welcome.show_projects(rows, "", api)
+            else:
+                welcome.show_projects(None, "No cloud projects yet. Open a photo, then use "
+                                            "File → Save to Cloud to keep it in your account.")
+
+        run_cloud(self, "Cloud projects", "Loading your projects…", api.list_projects, done,
+                  on_error=lambda msg: welcome.show_projects(
+                      None, "Couldn't load your cloud projects: " + msg.splitlines()[0]),
+                  quiet=True)
 
     def _cloud_download(self, api, row):
         if not self._confirm_discard():
@@ -1052,7 +1112,8 @@ class MainWindow(SelectionActions, QMainWindow):
         self.cloud_lbl.clicked.connect(self.ai_settings)
         self.statusBar().addPermanentWidget(self.cloud_lbl)
         self._cloud_changed(self.cloud_conn.state, self.cloud_conn.message)
-        QTimer.singleShot(400, self.cloud_conn.start)
+        QTimer.singleShot(400, self.cloud_conn.start)   # auto-connect if the GPU is on
+        QTimer.singleShot(200, self.refresh_cloud_projects)
         for a in (self.a_ai_bg, self.a_ai_refine, self.a_ai_obj, self.a_ai_refine_rm):
             self.ai_menu.addAction(a)
             self.doc_actions.append(a)
