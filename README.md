@@ -25,9 +25,12 @@ project.
 
 ## Run it
 
-On macOS, double-click **`Phrame.command`**. If macOS blocks it the first time,
-Control-click it, choose **Open**, then confirm **Open**. The first launch creates
-a virtual environment and installs dependencies automatically.
+On macOS, double-click **`Phrame.command`**. (`PhotoForge.bat` is only for
+Windows.) If macOS blocks it the first time, Control-click it, choose **Open**,
+then confirm **Open**. The first launch creates a virtual environment and
+installs dependencies automatically. Phrame supports Python 3.10 through 3.13
+on macOS; the launcher automatically avoids Python 3.14 because its Qt Cocoa
+plugin can fail during startup.
 
 On Windows, double-click **`PhotoForge.bat`**. You can also drag a photo onto the
 launcher to open it.
