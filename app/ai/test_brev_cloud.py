@@ -97,6 +97,31 @@ def main():
     point = calls[1][1]["points"][0]
     check("SAM coordinates scale to upload", np.allclose(point, [100.0, 50.0]))
 
+    # ---- `brev ls` only ever lists the ACTIVE org, so the message has to say which one.
+    def fake_ls(text):
+        connection._brev_cmd = lambda args: ["brev"] + args
+        connection._run = lambda args, timeout=30: (0, text)
+
+    real_cmd, real_run = connection._brev_cmd, connection._run
+    try:
+        fake_ls("You have 1 instances in Org my-org\n"
+                " NAME    STATUS   BUILD      SHELL  ID   MACHINE    GPU\n"
+                " gpu-a   RUNNING  COMPLETED  READY  aaa  g5.xlarge  A10G")
+        instances, org = connection.list_instances()
+        check("instances parsed from brev ls", instances == [("gpu-a", "RUNNING")])
+        check("active org reported", org == "my-org")
+
+        fake_ls("You have 0 instances in Org other-org")
+        instances, org = connection.list_instances()
+        check("empty org still reports its name", instances == [] and org == "other-org")
+
+        fake_ls("Error: you must login first. Run brev login")
+        check("signed-out CLI is reported as signed out",
+              "login" in str(connection.list_instances()).lower()
+              and "isn't logged in" in str(connection.list_instances()))
+    finally:
+        connection._brev_cmd, connection._run = real_cmd, real_run
+
     print("All Brev accelerator regression tests passed.")
 
 

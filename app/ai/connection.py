@@ -163,21 +163,36 @@ def _healthy(timeout=3):
 
 # --------------------------------------------------------------------------- Brev instances
 
+# `brev ls` says one of these when the CLI can see the network but not the account.
+_SIGNED_OUT = ("logged out", "log in", "login", "not authenticated", "unauthorized",
+               "access token", "401")
+
+
 def list_instances():
-    """[(name, STATUS)] of the logged-in Brev account, or a string explaining the problem."""
+    """((name, STATUS) list, org name) for the Brev account, or a string explaining the problem.
+
+    The org matters: `brev ls` only ever lists the *active* organisation, so a GPU that
+    lives in another org (or another account) simply is not in this list.
+    """
     if _brev_cmd(["ls"]) is None:
         return "The Brev CLI wasn't found. Install it inside Ubuntu (WSL) and run `brev login`."
     code, out = _run(["ls"])
     if code is None:
         return "Couldn't run the Brev CLI. Open Ubuntu and check that `brev ls` works."
-    if "logged out" in out.lower() or "log in" in out.lower():
-        return "Brev isn't logged in. Open Ubuntu and run `brev login` once."
+    listed = "instances in org" in out.lower()
+    if not listed and any(h in out.lower() for h in _SIGNED_OUT):
+        return ("Brev isn't logged in on this computer. Open Ubuntu (WSL) and run `brev login` "
+                "once, then click Try Connecting Again.")
+    org = ""
+    m = re.search(r"instances? in org\s+(\S+)", out, re.I)
+    if m:
+        org = m.group(1)
     found = []
     for line in out.splitlines():
         parts = line.split()
         if len(parts) >= 2 and parts[0] != "NAME" and parts[1].isupper() and parts[1].isalpha():
             found.append((parts[0], parts[1]))
-    return found
+    return found, org
 
 
 # --------------------------------------------------------------------------- setting up the GPU
@@ -310,10 +325,19 @@ def connect_blocking(progress=lambda msg: None):
     found = list_instances()
     if isinstance(found, str):
         return False, found
-    status = dict(found).get(name, "NOT_FOUND")
+    instances, org = found
+    status = dict(instances).get(name, "NOT_FOUND")
     if status == "NOT_FOUND":
-        return False, (f"No Brev instance named '{name}' in your Brev account "
-                       "(was it deleted or renamed?).")
+        # Almost always the CLI on this computer is signed in to a different Brev
+        # organisation (or account) than the one that owns the GPU, so say what it can see.
+        where = f"org '{org}'" if org else "this Brev account"
+        seen = ", ".join(n for n, _ in instances)
+        seen = f"it lists {seen}" if seen else "it has no instances at all"
+        return False, (
+            f"On this computer Brev is signed in to {where}, where {seen} — there is no "
+            f"'{name}' here. If the GPU lives in another Brev org, open Ubuntu (WSL) and run "
+            "`brev org ls` then `brev set <org>`; if it belongs to another account, run "
+            "`brev login` with that account. Then click Try Connecting Again.")
     if status != "RUNNING":
         return False, (f"Your GPU '{name}' is {status.lower()}, so AI runs on this computer. "
                        "Start it in the Brev dashboard, then click Try Connecting Again.")
